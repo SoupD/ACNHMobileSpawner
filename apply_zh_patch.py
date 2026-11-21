@@ -1,0 +1,184 @@
+# -*- coding: utf-8 -*-
+"""ACNHMobileSpawner 简体中文汉化补丁。
+在 Unity 构建之前运行，对工程源码做原地修改：
+ 1) MainScene.unity 中的静态 UI 文案 -> 中文
+ 2) C# 脚本中的运行时字符串 -> 中文
+ 3) 注入中文字体（NotoSansCJKsc-Regular.otf），把所有 Text 的字体指向它
+ 4) 默认语言改为简体中文 zhs（GameLanguage.DefaultLanguage / UI_Settings 默认值）
+
+用法： python apply_zh_patch.py <Unity工程根目录>
+例如： python apply_zh_patch.py ACNHMS_src/ACNHMS_Source
+"""
+import sys, os, re, json, shutil
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from zh_map import SCENE_MAP, SCRIPT_MAP
+
+FONT_FILE = "NotoSansCJKsc-Regular.otf"
+FONT_GUID = "a1b2c3d4e5f60718293a4b5c6d7e8f90"  # 固定 32 位 guid
+BUILTIN_ARIAL = "{fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}"
+CJK_FONT_REF = "{fileID: 12800000, guid: %s, type: 3}" % FONT_GUID
+
+
+def unescape(v):
+    v = v.replace('\\"', '"').replace('\\\\', '\\')
+    v = v.replace('\\n', '\n').replace('\\t', '\t').replace('\\r', '\r')
+    def u(m):
+        try:
+            return chr(int(m.group(1), 16))
+        except Exception:
+            return m.group(0)
+    v = re.sub(r'\\u([0-9a-fA-F]{4})', u, v)
+    v = re.sub(r'\\x([0-9a-fA-F]{2})', u, v)
+    return v
+
+
+def parse_scalar(raw):
+    raw = raw.strip()
+    if len(raw) >= 2 and raw.startswith('"') and raw.endswith('"'):
+        return True, unescape(raw[1:-1])
+    if len(raw) >= 2 and raw.startswith("'") and raw.endswith("'"):
+        return True, raw[1:-1].replace("''", "'")
+    return False, raw
+
+
+def escape_yaml_double(text):
+    # Unity/YAML 双引号标量转义
+    text = text.replace('\\', '\\\\').replace('"', '\\"')
+    text = text.replace('\n', '\\n').replace('\t', '\\t').replace('\r', '\\r')
+    return '"' + text + '"'
+
+
+def patch_scene(path):
+    with open(path, encoding='utf-8-sig', errors='replace') as f:
+        s = f.read()
+    replaced = 0
+
+    def do_text(m):
+        nonlocal replaced
+        prefix, raw = m.group(1), m.group(2)
+        quoted, plain = parse_scalar(raw)
+        zh = SCENE_MAP.get(plain)
+        if zh is None or zh == plain:
+            return m.group(0)
+        replaced += 1
+        return prefix + escape_yaml_double(zh)
+
+    s = re.sub(r'(m_Text:\s*)(.*)', do_text, s)
+
+    # 字体：把内置 Arial 引用替换为中文字体引用
+    font_hits = s.count(BUILTIN_ARIAL)
+    s = s.replace(BUILTIN_ARIAL, CJK_FONT_REF)
+
+    with open(path, 'w', encoding='utf-8', newline='') as f:
+        f.write(s)
+    return replaced, font_hits
+
+
+def patch_scripts(root):
+    changed, hits = [], 0
+    for dirpath, _, files in os.walk(os.path.join(root, 'Assets', 'Scripts')):
+        for name in files:
+            if not name.endswith('.cs'):
+                continue
+            p = os.path.join(dirpath, name)
+            with open(p, encoding='utf-8-sig', errors='replace') as f:
+                src = f.read()
+            orig = src
+            def repl(m):
+                nonlocal hits
+                plain = m.group(1).replace('\\"', '"').replace('\\n', '\n')
+                zh = SCRIPT_MAP.get(plain)
+                if zh is None:
+                    return m.group(0)
+                hits += 1
+                return '"' + zh.replace('"', '\\"').replace('\n', '\\n') + '"'
+            src = re.sub(r'"((?:[^"\\]|\\.)*)"', repl, src)
+            if src != orig:
+                with open(p, 'w', encoding='utf-8', newline='') as f:
+                    f.write(src)
+                changed.append(name)
+    return changed, hits
+
+
+def patch_default_language(root):
+    """默认语言改为 zhs（索引 7）"""
+    notes = []
+    # GameLanguage.cs
+    gl = os.path.join(root, 'Assets', 'Scripts', 'Core', 'Strings', 'GameLanguage.cs')
+    if os.path.exists(gl):
+        s = open(gl, encoding='utf-8-sig', errors='replace').read()
+        s2 = s.replace('public const string DefaultLanguage = "en";',
+                       'public const string DefaultLanguage = "zhs";')
+        if s2 != s:
+            open(gl, 'w', encoding='utf-8', newline='').write(s2)
+            notes.append('GameLanguage.DefaultLanguage -> zhs')
+    # UI_Settings.cs 默认语言索引：GetLanguage(int defLang = 0) -> 7
+    us = os.path.join(root, 'Assets', 'Scripts', 'ACNHMS', 'UI_Settings.cs')
+    if os.path.exists(us):
+        s = open(us, encoding='utf-8-sig', errors='replace').read()
+        s2 = re.sub(r'GetLanguage\(int defLang = 0\)', 'GetLanguage(int defLang = 7)', s)
+        if s2 != s:
+            open(us, 'w', encoding='utf-8', newline='').write(s2)
+            notes.append('UI_Settings.GetLanguage default -> 7(zhs)')
+    return notes
+
+
+def install_font(root):
+    """把中文字体放进 Assets/Fonts 并生成 .meta"""
+    fonts_dir = os.path.join(root, 'Assets', 'Fonts')
+    os.makedirs(fonts_dir, exist_ok=True)
+    src = os.path.join(HERE, FONT_FILE)
+    dst = os.path.join(fonts_dir, FONT_FILE)
+    if os.path.exists(src):
+        shutil.copyfile(src, dst)
+    meta = os.path.join(fonts_dir, FONT_FILE + '.meta')
+    if not os.path.exists(meta):
+        with open(meta, 'w', encoding='utf-8', newline='') as f:
+            f.write(
+                "fileFormatVersion: 2\n"
+                "guid: %s\n"
+                "TrueTypeFontImporter:\n"
+                "  serializedVersion: 4\n"
+                "  fontSize: 16\n"
+                "  forceTextureCase: -2\n"
+                "  characterSpacing: 0\n"
+                "  characterPadding: 1\n"
+                "  includeFontData: 1\n"
+                "  fontName: Noto Sans CJK SC\n"
+                "  fontNames:\n"
+                "  - Noto Sans CJK SC\n"
+                "  fallbackFontReferences: []\n"
+                "  customCharacters: \n"
+                "  fontRenderingMode: 0\n"
+                "  ascentCalculationMode: 1\n"
+                "  useLegacyBoundsCalculation: 0\n"
+                "  shouldRoundAdvanceValue: 1\n"
+            )
+    return os.path.exists(dst)
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("usage: python apply_zh_patch.py <UnityProjectRoot>")
+        sys.exit(1)
+    root = sys.argv[1]
+    scene = os.path.join(root, 'Assets', 'Scenes', 'MainScene.unity')
+    stats = {}
+    if os.path.exists(scene):
+        n, f = patch_scene(scene)
+        stats['scene_texts'] = n
+        stats['font_refs'] = f
+    else:
+        stats['scene_error'] = 'MainScene.unity not found'
+    changed, hits = patch_scripts(root)
+    stats['script_files'] = changed
+    stats['script_hits'] = hits
+    stats['language'] = patch_default_language(root)
+    stats['font_installed'] = install_font(root)
+    print(json.dumps(stats, ensure_ascii=False, indent=2))
+
+
+if __name__ == '__main__':
+    main()
