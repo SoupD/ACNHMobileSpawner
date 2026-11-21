@@ -56,12 +56,29 @@ jobs:
           restore-keys: |
             Library-iOS-
 
+      - name: 检查 Unity 授权 Secret
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        run: |
+          echo "UNITY_EMAIL     : $([ -n "$UNITY_EMAIL" ] && echo '已设置' || echo '❌ 缺失')"
+          echo "UNITY_PASSWORD  : $([ -n "$UNITY_PASSWORD" ] && echo '已设置' || echo '❌ 缺失')"
+          echo "UNITY_LICENSE   : $([ -n "$UNITY_LICENSE" ] && echo '已设置' || echo '未设置')"
+          echo "UNITY_SERIAL    : $([ -n "$UNITY_SERIAL" ] && echo '已设置' || echo '未设置')"
+          if [ -z "$UNITY_LICENSE" ] && [ -z "$UNITY_SERIAL" ]; then
+            echo "::error::UNITY_LICENSE 和 UNITY_SERIAL 至少需要一个！个人免费版请配置 UNITY_LICENSE（.ulf 文件内容）。"
+            exit 1
+          fi
+
       - name: Unity 构建 iOS (macOS 原生，经 Unity Hub)
         uses: game-ci/unity-builder@v4
         env:
-          # 专业版/序列号方式（你当前已验证可用）
+          # 同时传递：个人版用 UNITY_LICENSE(.ulf)，专业版用 UNITY_SERIAL；GameCI 自动选择
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
         with:
           projectPath: ACNHMS_Source
