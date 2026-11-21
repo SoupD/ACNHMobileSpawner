@@ -1,30 +1,21 @@
 name: 构建中文 IPA (ACNHMobileSpawner)
 
-# 手动触发；也可在推送到 main 时触发
+# 手动触发
 on:
   workflow_dispatch:
 
 jobs:
-  # ---------------------------------------------------------------
-  # 1) 用 Unity 构建出 iOS 的 Xcode 工程（Linux runner 更便宜）
-  # ---------------------------------------------------------------
-  build-xcode:
-    name: Unity 构建 iOS Xcode 工程
-    runs-on: ubuntu-latest
+  # iOS 构建必须用 macOS + Xcode。
+  # 直接用 macOS runner 原生构建（经 Unity Hub 安装 6000.3.4f1），
+  # 不依赖 GameCI 的 Linux Docker 镜像（该镜像不存在 6000.3.4f1-ios）。
+  build-ipa:
+    name: 汉化并构建中文 IPA
+    runs-on: macos-latest
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
         with:
           lfs: true
-
-      - name: 释放磁盘空间
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          swap-storage: true
 
       - name: 安装 Python
         uses: actions/setup-python@v5
@@ -53,7 +44,6 @@ jobs:
           git config user.name "CI Builder"
           git config user.email "ci@builder.local"
           git add -A
-          # detached HEAD 下也要能提交
           git -c commit.gpgsign=false commit -m "Apply zh-CN localization patch" || echo "nothing to commit"
           git status --short
           echo "---- branch cleaned ----"
@@ -66,69 +56,50 @@ jobs:
           restore-keys: |
             Library-iOS-
 
-      - name: Unity 构建 (iOS)
+      - name: Unity 构建 iOS (macOS 原生，经 Unity Hub)
         uses: game-ci/unity-builder@v4
         env:
+          # 专业版/序列号方式（你当前已验证可用）
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
         with:
           projectPath: ACNHMS_Source
-          unityVersion: auto
+          unityVersion: 6000.3.4f1
           targetPlatform: iOS
           buildName: ACNHMobileSpawner
+          cacheUnityInstallationOnMac: true   # 缓存 Unity 安装，加快后续构建
 
-      - name: 打包 Xcode 工程 (保留执行权限)
-        run: |
-          tar -czf xcode-project.tgz -C build/iOS .
-          ls -lh xcode-project.tgz
-
-      - name: 上传 Xcode 工程
-        uses: actions/upload-artifact@v4
-        with:
-          name: xcode-project
-          path: xcode-project.tgz
-          retention-days: 1
-
-  # ---------------------------------------------------------------
-  # 2) 在 macOS 上把 Xcode 工程导出为未签名 IPA
-  #    未签名 IPA 可用 AltStore / Sideloadly / 爱思助手 等自签侧载
-  # ---------------------------------------------------------------
-  make-ipa:
-    name: 导出 IPA
-    needs: build-xcode
-    runs-on: macos-latest
-    steps:
-      - name: 下载 Xcode 工程
-        uses: actions/download-artifact@v4
-        with:
-          name: xcode-project
-
-      - name: 解压
-        run: |
-          mkdir -p xcodeproj
-          tar -xzf xcode-project.tgz -C xcodeproj
-          find xcodeproj -maxdepth 2 -name "*.xcodeproj" -o -name "*.xcworkspace" | head
-
+      # Unity 导出的是 Xcode 工程，这里用 xcodebuild 归档并打成未签名 IPA。
+      # 未签名 IPA 可用 AltStore / Sideloadly / 爱思助手 等自签侧载。
       - name: 选择最新 Xcode
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
       - name: 归档 (无签名)
         run: |
-          PROJ=$(find xcodeproj -maxdepth 3 -name "*.xcodeproj" | head -n 1)
-          echo "PROJECT=$PROJ"
-          xcodebuild -project "$PROJ" \
-            -scheme Unity-iPhone \
-            -configuration Release \
-            -archivePath "$PWD/build/Unity-iPhone.xcarchive" \
-            CODE_SIGNING_ALLOWED=NO \
-            clean archive
+          echo "---- build output tree ----"
+          find build/iOS -maxdepth 3 \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) -print
+          # 优先用 xcworkspace（有 UnityFramework 时），否则用 xcodeproj
+          WS=$(find build/iOS -maxdepth 4 -name "*.xcworkspace" | head -n 1)
+          PROJ=$(find build/iOS -maxdepth 4 -name "*.xcodeproj" | head -n 1)
+          if [ -n "$WS" ]; then
+            echo "Using workspace: $WS"
+            xcodebuild -workspace "$WS" -scheme Unity-iPhone -configuration Release \
+              -archivePath "$PWD/build/Unity-iPhone.xcarchive" \
+              CODE_SIGNING_ALLOWED=NO -allowProvisioningUpdates clean archive
+          else
+            echo "Using project: $PROJ"
+            xcodebuild -project "$PROJ" -scheme Unity-iPhone -configuration Release \
+              -archivePath "$PWD/build/Unity-iPhone.xcarchive" \
+              CODE_SIGNING_ALLOWED=NO -allowProvisioningUpdates clean archive
+          fi
 
       - name: 导出未签名 IPA
         run: |
           mkdir -p Payload ipa-out
-          APP=$(find build/Unity-iPhone.xcarchive/Products -maxdepth 3 -name "*.app" | head -n 1)
+          APP=$(find build/Unity-iPhone.xcarchive/Products -maxdepth 4 -name "*.app" | head -n 1)
           echo "APP=$APP"
+          test -n "$APP"
           cp -R "$APP" Payload/
           # 移除签名与 watch 目录，保证侧载工具不报错
           rm -rf Payload/*.app/Watch Payload/*.app/_CodeSignature Payload/*.app/embedded.mobileprovision
