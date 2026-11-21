@@ -72,6 +72,37 @@ jobs:
             exit 1
           fi
 
+      # Unity Hub 4 废弃了 --headless install 命令，而 GameCI v4 仍在使用，
+      # 会报 "'install' is not supported by the native Unity Hub"。
+      # 这里预先安装最后一个支持该命令的 Hub 3.22.6，GameCI 检测到已安装便不会装 Hub 4。
+      - name: 安装 Unity Hub 3.22.6（兼容 GameCI v4 的 headless install）
+        run: |
+          HUB_VER="3.22.6"
+          if [ -x "/Applications/Unity Hub.app/Contents/MacOS/Unity Hub" ]; then
+            echo "Unity Hub 已存在，检查版本："
+            /Applications/Unity\ Hub.app/Contents/MacOS/Unity\ Hub --version || true
+          fi
+          # 若已装的是 Hub 4，先卸载它
+          if [ -d "/Applications/Unity Hub.app" ]; then
+            echo "移除已存在的 Unity Hub（避免 Hub 4 的 headless 不兼容）"
+            rm -rf "/Applications/Unity Hub.app"
+          fi
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "arm64" ]; then UARCH="arm64"; else UARCH="x64"; fi
+          URL="https://public-cdn.cloud.unity3d.com/hub/prod/${HUB_VER}/UnityHubSetup-${HUB_VER}-${UARCH}.dmg"
+          echo "Downloading $URL"
+          curl -fL --retry 3 -o /tmp/UnityHub.dmg "$URL"
+          hdiutil attach /tmp/UnityHub.dmg -nobrowse -quiet
+          # 卷名可能带版本后缀，用挂载点动态查找 .app
+          HUB_APP=$(find /Volumes -maxdepth 2 -name "Unity Hub.app" -type d 2>/dev/null | head -n 1)
+          echo "Found app: $HUB_APP"
+          test -n "$HUB_APP"
+          cp -R "$HUB_APP" /Applications/
+          VOL=$(echo "$HUB_APP" | cut -d/ -f3)
+          hdiutil detach "/Volumes/$VOL" -quiet || true
+          /Applications/Unity\ Hub.app/Contents/MacOS/Unity\ Hub --version || true
+          echo "---- Unity Hub 3 installed ----"
+
       - name: Unity 构建 iOS (macOS 原生，经 Unity Hub)
         uses: game-ci/unity-builder@v4
         env:
@@ -85,7 +116,9 @@ jobs:
           unityVersion: 6000.3.4f1
           targetPlatform: iOS
           buildName: ACNHMobileSpawner
-          cacheUnityInstallationOnMac: true   # 缓存 Unity 安装，加快后续构建
+          # 关闭 GameCI 自带的 Hub/编辑器缓存：默认缓存会把 Hub 4.0.1 恢复回来覆盖我们预装的 Hub 3。
+          # Hub 3 由上面的步骤预装；编辑器由 GameCI 用 Hub 3 的 headless install 安装。
+          cacheUnityInstallationOnMac: false
 
       # Unity 导出的是 Xcode 工程，这里用 xcodebuild 归档并打成未签名 IPA。
       # 未签名 IPA 可用 AltStore / Sideloadly / 爱思助手 等自签侧载。
