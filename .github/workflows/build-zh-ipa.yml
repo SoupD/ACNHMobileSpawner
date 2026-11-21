@@ -42,8 +42,21 @@ jobs:
 
       - name: 应用简体中文补丁
         run: |
+          export PYTHONDONTWRITEBYTECODE=1   # 避免生成 __pycache__ 弄脏分支
           python apply_zh_patch.py ACNHMS_Source
           echo "---- patch stats above ----"
+
+      # game-ci 要求构建前分支干净，否则报 "Branch is dirty"。
+      # 把汉化补丁产生的改动提交掉，分支即恢复干净（官方推荐做法）。
+      - name: 提交汉化改动（保持分支干净）
+        run: |
+          git config user.name "CI Builder"
+          git config user.email "ci@builder.local"
+          git add -A
+          # detached HEAD 下也要能提交
+          git -c commit.gpgsign=false commit -m "Apply zh-CN localization patch" || echo "nothing to commit"
+          git status --short
+          echo "---- branch cleaned ----"
 
       - name: 缓存 Library
         uses: actions/cache@v4
