@@ -13,7 +13,12 @@ import sys, os, re, json, shutil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from zh_map import SCENE_MAP, SCRIPT_MAP, SCRIPT_MAP_BY_FILE
+from zh_map import SCENE_MAP, SCRIPT_MAP
+try:
+    from zh_map import SCRIPT_MAP_BY_FILE
+except ImportError:
+    # 兼容旧版 zh_map.py（没有按文件定向映射）：降级为空，不影响主流程
+    SCRIPT_MAP_BY_FILE = {}
 
 FONT_FILE = "NotoSansCJKsc-Regular.otf"
 FONT_GUID = "a1b2c3d4e5f60718293a4b5c6d7e8f90"  # 固定 32 位 guid
@@ -137,12 +142,19 @@ def install_font(root):
     if os.path.exists(src):
         shutil.copyfile(src, dst)
     meta = os.path.join(fonts_dir, FONT_FILE + '.meta')
-    if not os.path.exists(meta):
+    # 若 meta 不存在，或是旧版本（缺 externalObjects 字段），都重写为完整模板
+    need_meta = True
+    if os.path.exists(meta):
+        existing = open(meta, encoding='utf-8', errors='replace').read()
+        if 'externalObjects' in existing and 'assetBundleVariant' in existing:
+            need_meta = False
+    if need_meta:
         with open(meta, 'w', encoding='utf-8', newline='') as f:
             f.write(
                 "fileFormatVersion: 2\n"
                 "guid: %s\n"
                 "TrueTypeFontImporter:\n"
+                "  externalObjects: {}\n"
                 "  serializedVersion: 4\n"
                 "  fontSize: 16\n"
                 "  forceTextureCase: -2\n"
@@ -158,6 +170,9 @@ def install_font(root):
                 "  ascentCalculationMode: 1\n"
                 "  useLegacyBoundsCalculation: 0\n"
                 "  shouldRoundAdvanceValue: 1\n"
+                "  userData: \n"
+                "  assetBundleName: \n"
+                "  assetBundleVariant: \n"
             )
     return os.path.exists(dst)
 
