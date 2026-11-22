@@ -131,8 +131,9 @@ jobs:
           echo "Unity exit code: $STATUS"
           echo "========== UNITY BUILD LOG (errors) =========="
           grep -iE "error|exception|failed|abort|Build result|Building scenes" unity-build.log | tail -100 || true
-          # 把真正的 C# 编译错误做成 annotation，直接显示在 Actions 页面顶部（也可从 API 读取）
-          grep -iE "error CS[0-9]+" unity-build.log 2>/dev/null | sort -u | head -20 | while IFS= read -r line; do
+          # 把所有可能的编译错误做成 annotation，直接显示在 Actions 页面顶部（也可从 API 读取）
+          grep -iE "error CS[0-9]+|\.cs\([0-9]+|Scripts have compiler errors|error:|Compilation failed|error [A-Z]+[0-9]+" \
+            unity-build.log 2>/dev/null | sort -u | head -25 | while IFS= read -r line; do
             echo "::error::${line:0:500}"
           done || true
           echo "========== UNITY BUILD LOG (tail) =========="
