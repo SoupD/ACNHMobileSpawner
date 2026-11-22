@@ -88,6 +88,8 @@ jobs:
       # 构建失败时收集 Unity 日志，便于定位真正错误（GitHub 网页看不到完整日志正文）。
       - name: 失败时收集 Unity 诊断日志
         if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p diag
           for f in \
@@ -99,6 +101,32 @@ jobs:
           done
           find "$HOME/.game-ci" -name "*.log" -o -name "*.txt" 2>/dev/null | head -20 | while read f; do cp "$f" diag/ 2>/dev/null || true; done
           ls -lah diag/ || true
+          echo "========== UNITY ERRORS (copy these to me) =========="
+          for f in diag/*; do
+            [ -f "$f" ] || continue
+            echo "---- $f ----"
+            grep -iE "error|exception|failed|fatal|abort|crash" "$f" 2>/dev/null | tail -60 || true
+          done
+          echo "========== FULL out.log (last 200 lines) =========="
+          [ -f "ACNHMS_Source/out.log" ] && tail -200 "ACNHMS_Source/out.log" || echo "(no out.log)"
+          echo "========== BUILD STEP ERRORS FROM ACTIONS LOG =========="
+          # 用 token 拉本次 job 完整日志（含被网页截断的 build 输出），grep 出真正的错误
+          JOB_ID=$(curl -sL -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${{ github.run_id }}/jobs" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['jobs'][0]['id'] if d.get('jobs') else '')" 2>/dev/null || true)
+          echo "job id: $JOB_ID"
+          if [ -n "$JOB_ID" ]; then
+          curl -sL -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${JOB_ID}/logs" -o joblogs.zip || true
+          if [ -s joblogs.zip ]; then
+            mkdir -p joblogs && unzip -q -o joblogs.zip -d joblogs 2>/dev/null || true
+            grep -iE "error CS|error:|exception|BuildFailedException|Failed to|fatal|abort|Application is shutting down" \
+              joblogs/* 2>/dev/null | tail -80 || echo "(no error lines found in job log)"
+          fi
+          fi
+          echo "========== END UNITY ERRORS =========="
       - name: 上传诊断日志
         if: failure()
         uses: actions/upload-artifact@v4
