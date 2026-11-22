@@ -9,7 +9,9 @@ jobs:
   # 且能自动激活/归还，不依赖旧的 serial-only 激活脚本。
   build-ipa:
     name: 汉化并构建中文 IPA (v6)
-    runs-on: macos-latest
+    # 固定 macOS 15：macos-latest 现为 macOS 26 (Darwin 25)，
+    # Unity 6000.3.4f1 在该系统下 build 进程 licensing 后异常崩溃。
+    runs-on: macos-15
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -77,6 +79,29 @@ jobs:
           buildName: ACNHMobileSpawner
           cacheUnityInstallationOnMac: true
           enableBuildRetry: true
+
+      # 构建失败时收集 Unity 日志，便于定位真正错误（GitHub 网页看不到完整日志正文）。
+      - name: 失败时收集 Unity 诊断日志
+        if: failure()
+        run: |
+          mkdir -p diag
+          for f in \
+            "$HOME/Library/Logs/Unity/Editor.log" \
+            "$HOME/Library/Logs/Unity/Unity.Licensing.Client.log" \
+            "ACNHMS_Source/out.log" \
+            "$HOME/.config/unity3d/Unity/Editor.log"; do
+            [ -f "$f" ] && cp "$f" diag/ 2>/dev/null || true
+          done
+          find "$HOME/.game-ci" -name "*.log" -o -name "*.txt" 2>/dev/null | head -20 | while read f; do cp "$f" diag/ 2>/dev/null || true; done
+          ls -lah diag/ || true
+      - name: 上传诊断日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-diagnostics
+          path: diag/
+          if-no-files-found: warn
+          retention-days: 7
 
       # Unity 导出的是 Xcode 工程，这里用 xcodebuild 归档并打成未签名 IPA。
       - name: 选择最新 Xcode
