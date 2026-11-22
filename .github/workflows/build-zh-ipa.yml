@@ -1,15 +1,14 @@
-name: 构建中文 IPA (ACNHMobileSpawner)
+name: 构建中文 IPA (ACNHMobileSpawner) v2
 
 # 手动触发
 on:
   workflow_dispatch:
 
 jobs:
-  # iOS 构建必须用 macOS + Xcode。
-  # 直接用 macOS runner 原生构建（经 Unity Hub 安装 6000.3.4f1），
-  # 不依赖 GameCI 的 Linux Docker 镜像（该镜像不存在 6000.3.4f1-ios）。
+  # 个人账号用 NUL（邮箱+密码）激活。GameCI v6 的新 CLI 支持个人 license，
+  # 且能自动激活/归还，不依赖旧的 serial-only 激活脚本。
   build-ipa:
-    name: 汉化并构建中文 IPA
+    name: 汉化并构建中文 IPA (v6)
     runs-on: macos-latest
     steps:
       - name: 检出代码
@@ -33,12 +32,10 @@ jobs:
 
       - name: 应用简体中文补丁
         run: |
-          export PYTHONDONTWRITEBYTECODE=1   # 避免生成 __pycache__ 弄脏分支
+          export PYTHONDONTWRITEBYTECODE=1
           python apply_zh_patch.py ACNHMS_Source
           echo "---- patch stats above ----"
 
-      # game-ci 要求构建前分支干净，否则报 "Branch is dirty"。
-      # 把汉化补丁产生的改动提交掉，分支即恢复干净（官方推荐做法）。
       - name: 提交汉化改动（保持分支干净）
         run: |
           git config user.name "CI Builder"
@@ -52,179 +49,55 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ACNHMS_Source/Library
-          key: Library-iOS-${{ hashFiles('ACNHMS_Source/Assets/**', 'ACNHMS_Source/Packages/**', 'ACNHMS_Source/ProjectSettings/**') }}
+          key: Library-iOS-v2-${{ hashFiles('ACNHMS_Source/Assets/**', 'ACNHMS_Source/Packages/**', 'ACNHMS_Source/ProjectSettings/**') }}
           restore-keys: |
-            Library-iOS-
+            Library-iOS-v2-
 
-      - name: 检查 Unity 授权 Secret
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-        run: |
-          echo "UNITY_EMAIL     : $([ -n "$UNITY_EMAIL" ] && echo '已设置' || echo '❌ 缺失')"
-          echo "UNITY_PASSWORD  : $([ -n "$UNITY_PASSWORD" ] && echo '已设置' || echo '❌ 缺失')"
-          echo "UNITY_LICENSE   : $([ -n "$UNITY_LICENSE" ] && echo '已设置' || echo '未设置')"
-          echo "UNITY_SERIAL    : $([ -n "$UNITY_SERIAL" ] && echo '已设置' || echo '未设置')"
-          if [ -z "$UNITY_LICENSE" ] && [ -z "$UNITY_SERIAL" ]; then
-            echo "::error::UNITY_LICENSE 和 UNITY_SERIAL 至少需要一个！个人免费版请配置 UNITY_LICENSE（.ulf 文件内容）。"
-            exit 1
-          fi
-
-      # GameCI v4 在 macOS 上的激活脚本只认 UNITY_SERIAL（serial 模式），不支持个人版 .ulf 文件。
-      # 个人免费版没有独立序列号，但序列号其实藏在 .ulf 文件的 DeveloperData 字段里。
-      # 这里自动从 UNITY_LICENSE 解出 serial，供构建步骤使用——你只需配 UNITY_LICENSE 一个 secret。
-      - name: 从 .ulf 许可证提取序列号（个人版适配 GameCI）
-        env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_SERIAL_SECRET: ${{ secrets.UNITY_SERIAL }}
-        run: |
-          # 总是优先从 .ulf 提取真实序列号：手动填的 UNITY_SERIAL 往往是无效占位值，
-          # 而个人版序列号其实就藏在 .ulf 里，这是个人版能用于 CI 的唯一正确 serial。
-          if [ -z "$UNITY_LICENSE" ]; then
-            if [ -n "$UNITY_SERIAL_SECRET" ]; then
-              echo "未提供 .ulf，使用已配置的 UNITY_SERIAL（专业版）"
-              echo "UNITY_SERIAL=$UNITY_SERIAL_SECRET" >> "$GITHUB_ENV"
-              exit 0
-            fi
-            echo "::error::未配置 UNITY_LICENSE，无法提取序列号"
-            exit 1
-          fi
-          printf '%s' "$UNITY_LICENSE" > /tmp/unity_license.ulf
-          # DeveloperData 是 base64 编码的序列号
-          SERIAL=$(python3 - <<'PY'
-          import base64, re
-          s = open('/tmp/unity_license.ulf', encoding='utf-8', errors='replace').read()
-          m = re.search(r'DeveloperData[^>]*Value="([^"]+)"', s)
-          if not m:
-              m = re.search(r'<string>([^<]+)</string>', s)
-          if not m:
-              raise SystemExit('')
-          raw = base64.b64decode(m.group(1))
-          # DeveloperData 解码后可能直接是 serial，也可能前 4 字节是长度头，
-          # 用正则在原始串和跳过 4 字节的串里找 XX-XXXX-XXXX-... 格式序列号。
-          pat = re.compile(r'[A-Za-z0-9]{2,8}(?:-[A-Za-z0-9]{2,8}){3,7}')
-          for data in (raw, raw[4:]):
-              text = data.decode('utf-8', errors='ignore')
-              hit = pat.search(text)
-              if hit:
-                  print(hit.group(0).strip())
-                  break
-          PY
-          )
-          echo "提取结果: ${SERIAL:0:2}********${SERIAL: -4} (长度 ${#SERIAL})"
-          if [ -z "$SERIAL" ] || [[ ! "$SERIAL" == *-* ]]; then
-            echo "::error::无法从 UNITY_LICENSE 解析出有效序列号，请确认 secret 内容是完整的 .ulf 文件（含 DeveloperData 字段）"
-            exit 1
-          fi
-          echo "UNITY_SERIAL=$SERIAL" >> "$GITHUB_ENV"
-          echo "---- serial extracted from .ulf ----"
-          rm -f /tmp/unity_license.ulf
-
-      # Unity Hub 4 废弃了 --headless install 命令，而 GameCI v4 仍在使用，
-      # 会报 "'install' is not supported by the native Unity Hub"。
-      # 这里预先安装最后一个支持该命令的 Hub 3.22.6，GameCI 检测到已安装便不会装 Hub 4。
-      - name: 安装 Unity Hub 3.22.6（兼容 GameCI v4 的 headless install）
-        timeout-minutes: 15
-        run: |
-          HUB_VER="3.22.6"
-          # 注意：绝不要直接启动 "Unity Hub.app/Contents/MacOS/Unity Hub"（它是 GUI 程序，
-          # 在无界面的 CI 里会挂起数小时直到 job 超时）。只读 Info.plist 取版本号。
-          if [ -f "/Applications/Unity Hub.app/Contents/Info.plist" ]; then
-            echo "Unity Hub 已存在，版本：$(defaults read '/Applications/Unity Hub.app/Contents/Info' CFBundleShortVersionString 2>/dev/null || echo unknown)"
-          fi
-          # 若已装的是 Hub 4，先卸载它
-          if [ -d "/Applications/Unity Hub.app" ]; then
-            echo "移除已存在的 Unity Hub（避免 Hub 4 的 headless 不兼容）"
-            rm -rf "/Applications/Unity Hub.app"
-          fi
-          ARCH=$(uname -m)
-          if [ "$ARCH" = "arm64" ]; then UARCH="arm64"; else UARCH="x64"; fi
-          URL="https://public-cdn.cloud.unity3d.com/hub/prod/${HUB_VER}/UnityHubSetup-${HUB_VER}-${UARCH}.dmg"
-          echo "Downloading $URL"
-          curl -fL --retry 3 -o /tmp/UnityHub.dmg "$URL"
-          hdiutil attach /tmp/UnityHub.dmg -nobrowse -quiet
-          # 卷名可能带版本后缀，用挂载点动态查找 .app
-          HUB_APP=$(find /Volumes -maxdepth 2 -name "Unity Hub.app" -type d 2>/dev/null | head -n 1)
-          echo "Found app: $HUB_APP"
-          test -n "$HUB_APP"
-          cp -R "$HUB_APP" /Applications/
-          VOL=$(echo "$HUB_APP" | cut -d/ -f3)
-          hdiutil detach "/Volumes/$VOL" -quiet || true
-
-          # 关键：禁用 Hub 自动更新。否则 Hub 3 启动时会去下载 Hub 4 更新包（ShipIt），
-          # 在无界面 CI 里可能卡住导致 job 超时（上一次跑了 6 小时就是这个原因之一）。
-          sudo mkdir -p "/Library/Application Support/Unity/config"
-          # 把 Licensing Client 各项超时调到上限，解决 "Timed-out after 30.00s waiting for ULFActivationResponse"。
-          cat <<'JSON' | sudo tee "/Library/Application Support/Unity/config/services-config.json" >/dev/null
-          {
-            "hubDisableAutoUpdate": true,
-            "hubDisableAnalytics": true,
-            "clientConnectTimeoutSec": 120,
-            "clientHandshakeTimeoutSec": 60,
-            "clientResolveEntitlementsTimeoutSec": 60,
-            "clientUpdateLicenseTimeoutSec": 60,
-            "licensingServiceTimeoutSec": 300
-          }
-          JSON
-          mkdir -p "$HOME/Library/Application Support/UnityHub"
-          echo '{"skipUnityAutoUpdate":true}' > "$HOME/Library/Application Support/UnityHub/preferences.json"
-          rm -rf "$HOME/Library/Caches/com.unity3d.unityhub.ShipIt" || true
-
-          echo "已安装 Unity Hub 版本：$(defaults read '/Applications/Unity Hub.app/Contents/Info' CFBundleShortVersionString 2>/dev/null || echo unknown)"
-          echo "---- Unity Hub 3 installed ----"
-
-      # Unity 官方：旧的 .ulf/.xml 许可证文件冲突会导致 "Timed-out waiting for ULFActivationResponse"。
-      # 构建前清掉 runner 上可能残留的旧许可证，让本次在线激活干净进行。
+      # v6 构建会自动归还它激活的许可证；这里只清理 runner 上可能残留的旧 license 文件，
+      # 避免旧文件冲突（Unity 官方说旧 .ulf/.xml 会导致激活失败）。
       - name: 清理残留 Unity 许可证文件
         run: |
           sudo rm -f "/Library/Application Support/Unity/Unity_lic.ulf" \
-                    "/Library/Application Support/Unity/Unity_v*.ulf" \
                     "/Library/Application Support/Unity/"*.xml 2>/dev/null || true
-          rm -f "$HOME/Library/Application Support/Unity/Unity_lic.ulf" \
-                "$HOME/.config/unity3d/Unity/Unity_lic.ulf" 2>/dev/null || true
           echo "---- stale license files cleaned ----"
 
-      - name: Unity 构建 iOS (macOS 原生，经 Unity Hub)
-        timeout-minutes: 90
-        uses: game-ci/unity-builder@v4
+      - name: Unity 构建 iOS (GameCI v6, 个人账号新版激活)
+        timeout-minutes: 120
+        uses: game-ci/unity-builder@v6
         env:
-          # GameCI v4 在 macOS 只用 serial 模式激活；UNITY_SERIAL 来自上一步（现有 secret 或从 .ulf 解出的真实序列号）
+          # GameCI v6 有专门的 personal 分支：只凭邮箱+密码激活免费个人席位，
+          # 不需要 serial 或 .ulf（新版源码明确：UNITY_EMAIL+UNITY_PASSWORD = Personal free seat）。
+          # 切勿传 UNITY_LICENSE：那会走 file 模式，而免费席位不支持手动 .ulf 激活。
+          # 且新版内置最多 5 次重试，专治 ULF 激活超时等临时错误。
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ env.UNITY_SERIAL }}
         with:
           projectPath: ACNHMS_Source
-          unityVersion: 6000.3.4f1
           targetPlatform: iOS
           buildName: ACNHMobileSpawner
-          # 关闭 GameCI 自带的 Hub/编辑器缓存：默认缓存会把 Hub 4.0.1 恢复回来覆盖我们预装的 Hub 3。
-          # Hub 3 由上面的步骤预装；编辑器由 GameCI 用 Hub 3 的 headless install 安装。
-          cacheUnityInstallationOnMac: false
+          cacheUnityInstallationOnMac: true
+          enableBuildRetry: true
 
       # Unity 导出的是 Xcode 工程，这里用 xcodebuild 归档并打成未签名 IPA。
-      # 未签名 IPA 可用 AltStore / Sideloadly / 爱思助手 等自签侧载。
       - name: 选择最新 Xcode
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
       - name: 归档 (无签名)
         run: |
           echo "---- build output tree ----"
-          find build/iOS -maxdepth 3 \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) -print
-          # 优先用 xcworkspace（有 UnityFramework 时），否则用 xcodeproj
-          WS=$(find build/iOS -maxdepth 4 -name "*.xcworkspace" | head -n 1)
-          PROJ=$(find build/iOS -maxdepth 4 -name "*.xcodeproj" | head -n 1)
+          find build -maxdepth 4 \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) -print
+          WS=$(find build -maxdepth 5 -name "*.xcworkspace" | head -n 1)
+          PROJ=$(find build -maxdepth 5 -name "*.xcodeproj" | head -n 1)
           if [ -n "$WS" ]; then
             echo "Using workspace: $WS"
             xcodebuild -workspace "$WS" -scheme Unity-iPhone -configuration Release \
               -archivePath "$PWD/build/Unity-iPhone.xcarchive" \
-              CODE_SIGNING_ALLOWED=NO -allowProvisioningUpdates clean archive
+              CODE_SIGNING_ALLOWED=NO clean archive
           else
             echo "Using project: $PROJ"
             xcodebuild -project "$PROJ" -scheme Unity-iPhone -configuration Release \
               -archivePath "$PWD/build/Unity-iPhone.xcarchive" \
-              CODE_SIGNING_ALLOWED=NO -allowProvisioningUpdates clean archive
+              CODE_SIGNING_ALLOWED=NO clean archive
           fi
 
       - name: 导出未签名 IPA
@@ -234,7 +107,6 @@ jobs:
           echo "APP=$APP"
           test -n "$APP"
           cp -R "$APP" Payload/
-          # 移除签名与 watch 目录，保证侧载工具不报错
           rm -rf Payload/*.app/Watch Payload/*.app/_CodeSignature Payload/*.app/embedded.mobileprovision
           zip -qry ipa-out/ACNHMobileSpawner-zh-CN.ipa Payload
           ls -lh ipa-out/
