@@ -342,7 +342,8 @@ SCRIPT_MAP = {
     "Fetching {creating}": "正在获取 {creating}",
     "Creating freezers for {creating}": "正在为 {creating} 创建冻结器",
     "Successfully created freezers for {creating}!": "已成功为 {creating} 创建冻结器！",
-    "Cancel": "取消",
+    # "Cancel" 已移除：该词在场景按钮中由 SCENE_MAP 覆盖，
+    # 在 C# 里多为 CancellationToken 等标识符，全局替换会误伤网络脚本。
     "Stop refreshing": "停止刷新",
     "Username limit reached!": "用户名已达上限！",
     "Found {0}, Count: {1}": "找到 {0}，数量：{1}",
@@ -356,9 +357,16 @@ SCRIPT_MAP = {
     "Connected successfully": "连接成功",
     "USB connection failed: Check popup": "USB 连接失败：请查看弹窗",
     "USB connected": "USB 已连接",
-    "villager flags": "村民标志",
-    "inventory": "背包",
-    "map": "地图",
-    "wallet": "钱包",
-    "turnip prices": "大头菜价格",
+}
+
+# 按文件定向替换：这些短词太通用，只在指定的 UI_Freeze.cs 内替换，避免误伤
+# 键为文件名（basename），值为 {英文: 中文}
+SCRIPT_MAP_BY_FILE = {
+    "UI_Freeze.cs": {
+        "villager flags": "村民标志",
+        "inventory": "背包",
+        "map": "地图",
+        "wallet": "钱包",
+        "turnip prices": "大头菜价格",
+    },
 }
