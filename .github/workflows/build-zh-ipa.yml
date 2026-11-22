@@ -123,7 +123,15 @@ jobs:
           if [ -s joblogs.zip ]; then
             mkdir -p joblogs && unzip -q -o joblogs.zip -d joblogs 2>/dev/null || true
             grep -iE "error CS|error:|exception|BuildFailedException|Failed to|fatal|abort|Application is shutting down" \
-              joblogs/* 2>/dev/null | tail -80 || echo "(no error lines found in job log)"
+              joblogs/* 2>/dev/null | tail -80 > diag/BUILD_ERRORS.txt || true
+            echo "---- errors found in job log ----"
+            cat diag/BUILD_ERRORS.txt
+            # annotation：让错误直接显示在 Actions 页面顶部
+            if [ -s diag/BUILD_ERRORS.txt ]; then
+              head -5 diag/BUILD_ERRORS.txt | while IFS= read -r line; do
+                echo "::error::${line:0:400}"
+              done
+            fi
           fi
           fi
           echo "========== END UNITY ERRORS =========="
