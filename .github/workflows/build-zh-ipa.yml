@@ -73,12 +73,17 @@ jobs:
           # 且新版内置最多 5 次重试，专治 ULF 激活超时等临时错误。
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          # 给 game-ci CLI 的 GitHub API 调用认证，避免匿名限流 403。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: ACNHMS_Source
           targetPlatform: iOS
           buildName: ACNHMobileSpawner
           cacheUnityInstallationOnMac: true
           enableBuildRetry: true
+          # 固定 CLI 版本：默认 latest 会调用 GitHub API 解析最新版本，
+          # 今天跑了很多次触发 API 限流会报 "GitHub API returned 403"。
+          cliVersion: v0.1.77
 
       # 构建失败时收集 Unity 日志，便于定位真正错误（GitHub 网页看不到完整日志正文）。
       - name: 失败时收集 Unity 诊断日志
