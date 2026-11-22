@@ -73,6 +73,20 @@ jobs:
           {
               public static void BuildIOS()
               {
+                  // ---- 字体自检：确认中文字体被正确导入 ----
+                  var fontPath = "Assets/Fonts/NotoSansCJKsc-Regular.otf";
+                  var f = AssetDatabase.LoadAssetAtPath<Font>(fontPath);
+                  Debug.Log("[ZH-FONT] exists=" + System.IO.File.Exists(fontPath) + " loaded=" + (f != null));
+                  if (f != null)
+                  {
+                      Debug.Log("[ZH-FONT] name=" + f.name + " dynamic=" + f.dynamic +
+                                " fontSize=" + f.fontSize + " textureCount=" + f.fontNames.Length);
+                      Debug.Log("[ZH-FONT] fontNames=" + string.Join("|", f.fontNames));
+                  }
+                  else
+                  {
+                      Debug.LogError("[ZH-FONT] FAILED to load Chinese font - text will be blank!");
+                  }
                   var scenes = EditorBuildSettings.scenes
                       .Where(s => s.enabled)
                       .Select(s => s.path)
