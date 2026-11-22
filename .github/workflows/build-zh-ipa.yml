@@ -84,10 +84,15 @@ jobs:
                       return;
                   }
                   Debug.Log("Building scenes: " + string.Join(", ", scenes));
+                  // 用环境变量传入的绝对路径，确保 Xcode 工程输出到仓库根目录的 build/iOS
+                  var outDir = System.Environment.GetEnvironmentVariable("CI_BUILD_OUTPUT");
+                  if (string.IsNullOrEmpty(outDir))
+                      outDir = "build/iOS";
+                  Debug.Log("Build output: " + outDir);
                   var opts = new BuildPlayerOptions
                   {
                       scenes = scenes,
-                      locationPathName = "build/iOS",
+                      locationPathName = outDir,
                       target = BuildTarget.iOS,
                       options = BuildOptions.None
                   };
@@ -139,11 +144,14 @@ jobs:
           echo "========== UNITY BUILD LOG (tail) =========="
           tail -80 unity-build.log || true
           echo "========== BUILD OUTPUT =========="
-          find build -maxdepth 4 \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) -print 2>/dev/null || true
+          find build -maxdepth 5 \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) -print 2>/dev/null || true
+          echo "---- also check project-local build dir ----"
+          find ACNHMS_Source/build -maxdepth 5 \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) -print 2>/dev/null || true
           exit $STATUS
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          CI_BUILD_OUTPUT: ${{ github.workspace }}/build/iOS
 
       - name: 上传构建日志
         if: always()
@@ -159,10 +167,11 @@ jobs:
 
       - name: 归档 (无签名)
         run: |
-          WS=$(find build -maxdepth 5 -name "*.xcworkspace" | head -n 1)
-          PROJ=$(find build -maxdepth 5 -name "*.xcodeproj" | head -n 1)
+          # 在两个可能位置查找 Unity 导出的 Xcode 工程
+          WS=$(find build ACNHMS_Source/build -maxdepth 6 -name "*.xcworkspace" 2>/dev/null | head -n 1)
+          PROJ=$(find build ACNHMS_Source/build -maxdepth 6 -name "*.xcodeproj" 2>/dev/null | head -n 1)
           echo "workspace=$WS project=$PROJ"
-          test -n "$WS$PROJ"
+          test -n "$WS$PROJ" || { echo "::error::未找到 Xcode 工程，检查 Unity 构建日志"; exit 1; }
           if [ -n "$WS" ]; then
             xcodebuild -workspace "$WS" -scheme Unity-iPhone -configuration Release \
               -archivePath "$PWD/build/Unity-iPhone.xcarchive" \
