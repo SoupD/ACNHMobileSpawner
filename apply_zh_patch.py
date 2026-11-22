@@ -146,11 +146,13 @@ def install_font(root):
     need_meta = True
     if os.path.exists(meta):
         existing = open(meta, encoding='utf-8', errors='replace').read()
-        if 'externalObjects' in existing and 'assetBundleVariant' in existing:
+        guid_line = [l for l in existing.splitlines() if l.strip().startswith('guid:')]
+        valid_guid = bool(guid_line) and FONT_GUID in guid_line[0] and '%s' not in existing
+        if 'externalObjects' in existing and 'assetBundleVariant' in existing and valid_guid:
             need_meta = False
     if need_meta:
         with open(meta, 'w', encoding='utf-8', newline='') as f:
-            f.write(
+            f.write((
                 "fileFormatVersion: 2\n"
                 "guid: %s\n"
                 "TrueTypeFontImporter:\n"
@@ -173,7 +175,7 @@ def install_font(root):
                 "  userData: \n"
                 "  assetBundleName: \n"
                 "  assetBundleVariant: \n"
-            )
+            ) % FONT_GUID)
     return os.path.exists(dst)
 
 
