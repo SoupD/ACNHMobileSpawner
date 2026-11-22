@@ -23,6 +23,9 @@ except ImportError:
 FONT_FILE = "NotoSansCJKsc-Regular.otf"
 FONT_GUID = "a1b2c3d4e5f60718293a4b5c6d7e8f90"  # 固定 32 位 guid
 BUILTIN_ARIAL = "{fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}"
+# 项目自带的等宽字体 RobotoMono，被 IP/端口/十六进制数值等输入框使用。
+# 它在 iOS 上不渲染，必须一并替换成中文字体，否则这些输入框显示空白。
+ROBOTO_MONO = "{fileID: 12800000, guid: c4b417931926fac47923d5f75f316c95, type: 3}"
 CJK_FONT_REF = "{fileID: 12800000, guid: %s, type: 3}" % FONT_GUID
 
 
@@ -72,9 +75,11 @@ def patch_scene(path):
 
     s = re.sub(r'(m_Text:\s*)(.*)', do_text, s)
 
-    # 字体：把内置 Arial 引用替换为中文字体引用
+    # 字体：把内置 Arial 和 RobotoMono(输入框用) 都替换为中文字体引用
     font_hits = s.count(BUILTIN_ARIAL)
     s = s.replace(BUILTIN_ARIAL, CJK_FONT_REF)
+    font_hits += s.count(ROBOTO_MONO)
+    s = s.replace(ROBOTO_MONO, CJK_FONT_REF)
 
     with open(path, 'w', encoding='utf-8', newline='') as f:
         f.write(s)
