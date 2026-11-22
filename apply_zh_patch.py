@@ -13,7 +13,7 @@ import sys, os, re, json, shutil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from zh_map import SCENE_MAP, SCRIPT_MAP
+from zh_map import SCENE_MAP, SCRIPT_MAP, SCRIPT_MAP_BY_FILE
 
 FONT_FILE = "NotoSansCJKsc-Regular.otf"
 FONT_GUID = "a1b2c3d4e5f60718293a4b5c6d7e8f90"  # 固定 32 位 guid
@@ -86,10 +86,13 @@ def patch_scripts(root):
             with open(p, encoding='utf-8-sig', errors='replace') as f:
                 src = f.read()
             orig = src
+            # 通用映射 + 仅对本文件生效的定向映射
+            local_map = dict(SCRIPT_MAP)
+            local_map.update(SCRIPT_MAP_BY_FILE.get(name, {}))
             def repl(m):
                 nonlocal hits
                 plain = m.group(1).replace('\\"', '"').replace('\\n', '\n')
-                zh = SCRIPT_MAP.get(plain)
+                zh = local_map.get(plain)
                 if zh is None:
                     return m.group(0)
                 hits += 1
@@ -159,6 +162,29 @@ def install_font(root):
     return os.path.exists(dst)
 
 
+def fix_compile_errors(root):
+    """修复原工程自身在较新 NHSE.Core 库下的两个编译错误（与汉化无关）。
+    ItemInfo.cs 的堆叠数量字典引用了 ItemKind 枚举中不存在的两个成员，
+    导致 Unity 6 编译时报 CS0103。注释掉这两行即可（对应物品类型在当前库中不存在）。
+    """
+    p = os.path.join(root, 'Assets', 'Scripts', 'Core', 'Structures', 'Item', 'ItemInfo.cs')
+    if not os.path.exists(p):
+        return []
+    s = open(p, encoding='utf-8-sig', errors='replace').read()
+    orig = s
+    fixed = []
+    for kind in ('Kind_SubToolEat', 'Kind_XmasDeco'):
+        # 精确匹配字典行：{Kind_xxx, 数字},  —— 注意不能误伤 Kind_SubToolEatDrop / Remakeable
+        pattern = r'(\s*)\{' + re.escape(kind) + r',\s*[0-9]+\},'
+        def repl(m):
+            fixed.append(kind)
+            return m.group(1) + '// [zh-patch] disabled: undefined enum member ' + kind
+        s = re.sub(pattern, repl, s)
+    if s != orig:
+        open(p, 'w', encoding='utf-8', newline='').write(s)
+    return fixed
+
+
 def main():
     if len(sys.argv) < 2:
         print("usage: python apply_zh_patch.py <UnityProjectRoot>")
@@ -177,6 +203,7 @@ def main():
     stats['script_hits'] = hits
     stats['language'] = patch_default_language(root)
     stats['font_installed'] = install_font(root)
+    stats['compile_fixes'] = fix_compile_errors(root)
     print(json.dumps(stats, ensure_ascii=False, indent=2))
 
 
