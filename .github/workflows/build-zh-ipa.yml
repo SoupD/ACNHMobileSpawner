@@ -76,11 +76,13 @@ jobs:
       # 会报 "'install' is not supported by the native Unity Hub"。
       # 这里预先安装最后一个支持该命令的 Hub 3.22.6，GameCI 检测到已安装便不会装 Hub 4。
       - name: 安装 Unity Hub 3.22.6（兼容 GameCI v4 的 headless install）
+        timeout-minutes: 15
         run: |
           HUB_VER="3.22.6"
-          if [ -x "/Applications/Unity Hub.app/Contents/MacOS/Unity Hub" ]; then
-            echo "Unity Hub 已存在，检查版本："
-            /Applications/Unity\ Hub.app/Contents/MacOS/Unity\ Hub --version || true
+          # 注意：绝不要直接启动 "Unity Hub.app/Contents/MacOS/Unity Hub"（它是 GUI 程序，
+          # 在无界面的 CI 里会挂起数小时直到 job 超时）。只读 Info.plist 取版本号。
+          if [ -f "/Applications/Unity Hub.app/Contents/Info.plist" ]; then
+            echo "Unity Hub 已存在，版本：$(defaults read '/Applications/Unity Hub.app/Contents/Info' CFBundleShortVersionString 2>/dev/null || echo unknown)"
           fi
           # 若已装的是 Hub 4，先卸载它
           if [ -d "/Applications/Unity Hub.app" ]; then
@@ -100,10 +102,20 @@ jobs:
           cp -R "$HUB_APP" /Applications/
           VOL=$(echo "$HUB_APP" | cut -d/ -f3)
           hdiutil detach "/Volumes/$VOL" -quiet || true
-          /Applications/Unity\ Hub.app/Contents/MacOS/Unity\ Hub --version || true
+
+          # 关键：禁用 Hub 自动更新。否则 Hub 3 启动时会去下载 Hub 4 更新包（ShipIt），
+          # 在无界面 CI 里可能卡住导致 job 超时（上一次跑了 6 小时就是这个原因之一）。
+          sudo mkdir -p "/Library/Application Support/Unity/config"
+          echo '{"hubDisableAutoUpdate":true,"hubDisableAnalytics":true}' | sudo tee "/Library/Application Support/Unity/config/services-config.json" >/dev/null
+          mkdir -p "$HOME/Library/Application Support/UnityHub"
+          echo '{"skipUnityAutoUpdate":true}' > "$HOME/Library/Application Support/UnityHub/preferences.json"
+          rm -rf "$HOME/Library/Caches/com.unity3d.unityhub.ShipIt" || true
+
+          echo "已安装 Unity Hub 版本：$(defaults read '/Applications/Unity Hub.app/Contents/Info' CFBundleShortVersionString 2>/dev/null || echo unknown)"
           echo "---- Unity Hub 3 installed ----"
 
       - name: Unity 构建 iOS (macOS 原生，经 Unity Hub)
+        timeout-minutes: 90
         uses: game-ci/unity-builder@v4
         env:
           # 同时传递：个人版用 UNITY_LICENSE(.ulf)，专业版用 UNITY_SERIAL；GameCI 自动选择
