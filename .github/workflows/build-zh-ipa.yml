@@ -43,9 +43,19 @@ jobs:
       - name: 安装 Unity 6000.3.4f1 + iOS 模块
         run: |
           curl -fsSL https://unity.com/install.sh | bash
-          export PATH="$HOME/.local/bin:$PATH"
-          unity install 6000.3.4f1 -m ios -a arm64 --cm --accept-eula --yes
-          unity editors -i
+          # macOS 上该脚本默认装到 ~/.unity/bin/unity（home 模式），Linux 才是 ~/.local/bin。
+          # 逐一探测，找到可用的 unity CLI 绝对路径，避免依赖 shell 重启后才生效的 PATH。
+          UNITY_CLI=""
+          for c in "$HOME/.unity/bin/unity" "$HOME/.local/bin/unity" "$(command -v unity 2>/dev/null)"; do
+            if [ -n "$c" ] && [ -x "$c" ]; then UNITY_CLI="$c"; break; fi
+          done
+          if [ -z "$UNITY_CLI" ]; then
+            UNITY_CLI=$(find "$HOME" -maxdepth 5 -type f -name unity -perm -u+x 2>/dev/null | head -n 1)
+          fi
+          echo "unity CLI: $UNITY_CLI"
+          test -n "$UNITY_CLI" && test -x "$UNITY_CLI"
+          "$UNITY_CLI" install 6000.3.4f1 -m ios -a arm64 --cm --accept-eula --yes
+          "$UNITY_CLI" editors -i
           test -x "/Applications/Unity/Hub/Editor/6000.3.4f1/Unity.app/Contents/MacOS/Unity"
 
       # 写入自定义 build script：从激活的场景构建 iOS Xcode 工程，输出到 build/iOS
