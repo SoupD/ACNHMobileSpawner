@@ -156,13 +156,35 @@ jobs:
           # 关键：禁用 Hub 自动更新。否则 Hub 3 启动时会去下载 Hub 4 更新包（ShipIt），
           # 在无界面 CI 里可能卡住导致 job 超时（上一次跑了 6 小时就是这个原因之一）。
           sudo mkdir -p "/Library/Application Support/Unity/config"
-          echo '{"hubDisableAutoUpdate":true,"hubDisableAnalytics":true}' | sudo tee "/Library/Application Support/Unity/config/services-config.json" >/dev/null
+          # 把 Licensing Client 各项超时调到上限，解决 "Timed-out after 30.00s waiting for ULFActivationResponse"。
+          cat <<'JSON' | sudo tee "/Library/Application Support/Unity/config/services-config.json" >/dev/null
+          {
+            "hubDisableAutoUpdate": true,
+            "hubDisableAnalytics": true,
+            "clientConnectTimeoutSec": 120,
+            "clientHandshakeTimeoutSec": 60,
+            "clientResolveEntitlementsTimeoutSec": 60,
+            "clientUpdateLicenseTimeoutSec": 60,
+            "licensingServiceTimeoutSec": 300
+          }
+          JSON
           mkdir -p "$HOME/Library/Application Support/UnityHub"
           echo '{"skipUnityAutoUpdate":true}' > "$HOME/Library/Application Support/UnityHub/preferences.json"
           rm -rf "$HOME/Library/Caches/com.unity3d.unityhub.ShipIt" || true
 
           echo "已安装 Unity Hub 版本：$(defaults read '/Applications/Unity Hub.app/Contents/Info' CFBundleShortVersionString 2>/dev/null || echo unknown)"
           echo "---- Unity Hub 3 installed ----"
+
+      # Unity 官方：旧的 .ulf/.xml 许可证文件冲突会导致 "Timed-out waiting for ULFActivationResponse"。
+      # 构建前清掉 runner 上可能残留的旧许可证，让本次在线激活干净进行。
+      - name: 清理残留 Unity 许可证文件
+        run: |
+          sudo rm -f "/Library/Application Support/Unity/Unity_lic.ulf" \
+                    "/Library/Application Support/Unity/Unity_v*.ulf" \
+                    "/Library/Application Support/Unity/"*.xml 2>/dev/null || true
+          rm -f "$HOME/Library/Application Support/Unity/Unity_lic.ulf" \
+                "$HOME/.config/unity3d/Unity/Unity_lic.ulf" 2>/dev/null || true
+          echo "---- stale license files cleaned ----"
 
       - name: Unity 构建 iOS (macOS 原生，经 Unity Hub)
         timeout-minutes: 90
