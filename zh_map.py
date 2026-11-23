@@ -369,6 +369,12 @@ SCRIPT_MAP = {
     "Present": "礼物",
     "Delivery": "投递",
     "Nothing": "无",
+    '"FeverStart":': "发烧起点：",
+    "Only fill empty inventory spaces?": "仅填充背包空位？",
+    "Parsed as": "解析为",
+    "Parse to:": "解析到：",
+    "villager (none selected)": "村民（未选择）",
+    "Internal": "内部物品",
 }
 
 # 顶部功能按钮的场景字段名 PanelName（运行时生成按钮文字，不在 m_Text 里）
@@ -390,7 +396,7 @@ ENUM_ZH_MAP = {
     "Weed": "杂草", "TreeBranch": "树枝", "Fence": "栅栏", "Bush": "灌木",
     "Flower": "花朵", "Tree": "树木", "Item": "物品", "All": "全部",
     "Stone": "石头", "Wood": "木材", "RockMaterial": "岩石材料",
-    "SpoiledTurnip": "腐烂大头菜", "Money": "铃钱", "None": "无",
+    "SpoiledTurnip": "腐烂大头菜", "Money": "铃钱", "None": "无", "Internal": "内部物品",
 }
 
 # 按文件定向替换：这些短词太通用，只在指定的 UI_Freeze.cs 内替换，避免误伤
