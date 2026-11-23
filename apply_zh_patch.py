@@ -81,6 +81,25 @@ def patch_scene(path):
     font_hits += s.count(ROBOTO_MONO)
     s = s.replace(ROBOTO_MONO, CJK_FONT_REF)
 
+    # 中文字体 Noto Sans CJK SC 行高约 1.45em，比原来的 Arial(约1.0em)高很多。
+    # 原本按英文高度设计的输入框标签(如 Mon:/AM:，框高约44px < 中文字行高52px)，
+    # 换成中文字体后会被 VerticalOverflow=Truncate 整行裁掉 → 文字完全不显示。
+    # 对所有含中文的 Text 组件，把水平/垂直溢出都改为 Overflow，避免被裁剪。
+    overflow_fixed = 0
+    blocks = re.split(r'(?=--- !u!)', s)
+    fixed_blocks = []
+    for blk in blocks:
+        tm = re.search(r'm_Text:\s*(.*)', blk)
+        if tm and re.search(r'[\u4e00-\u9fff]', tm.group(1)):
+            new_blk = blk.replace('m_HorizontalOverflow: 0', 'm_HorizontalOverflow: 1')
+            new_blk = new_blk.replace('m_VerticalOverflow: 0', 'm_VerticalOverflow: 1')
+            if new_blk != blk:
+                overflow_fixed += 1
+            fixed_blocks.append(new_blk)
+        else:
+            fixed_blocks.append(blk)
+    s = ''.join(fixed_blocks)
+
     with open(path, 'w', encoding='utf-8', newline='') as f:
         f.write(s)
     return replaced, font_hits
