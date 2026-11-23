@@ -357,6 +357,18 @@ SCRIPT_MAP = {
     "Connected successfully": "连接成功",
     "USB connection failed: Check popup": "USB 连接失败：请查看弹窗",
     "USB connected": "USB 已连接",
+    # 跨行单引号标量（补丁会拼成下列 key）
+    "Fill row (row 0)": "填充本行",
+    "Delete item (39)": "删除物品",
+    "Delete item (0)": "删除物品",
+    "Set to current (39)": "设为当前",
+    "Set to current (0)": "设为当前",
+    "No item selected": "未选择物品",
+    "You are using the latest version, and looking pretty fine doing it!": "当前为最新版本",
+    "WrappingPaper": "包装纸",
+    "Present": "礼物",
+    "Delivery": "投递",
+    "Nothing": "无",
 }
 
 # 顶部功能按钮的场景字段名 PanelName（运行时生成按钮文字，不在 m_Text 里）
@@ -377,6 +389,8 @@ PANEL_NAME_MAP = {
 ENUM_ZH_MAP = {
     "Weed": "杂草", "TreeBranch": "树枝", "Fence": "栅栏", "Bush": "灌木",
     "Flower": "花朵", "Tree": "树木", "Item": "物品", "All": "全部",
+    "Stone": "石头", "Wood": "木材", "RockMaterial": "岩石材料",
+    "SpoiledTurnip": "腐烂大头菜", "Money": "铃钱", "None": "无",
 }
 
 # 按文件定向替换：这些短词太通用，只在指定的 UI_Freeze.cs 内替换，避免误伤
