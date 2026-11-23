@@ -17,8 +17,11 @@ from zh_map import SCENE_MAP, SCRIPT_MAP
 try:
     from zh_map import SCRIPT_MAP_BY_FILE
 except ImportError:
-    # 兼容旧版 zh_map.py（没有按文件定向映射）：降级为空，不影响主流程
     SCRIPT_MAP_BY_FILE = {}
+try:
+    from zh_map import PANEL_NAME_MAP, ENUM_ZH_MAP
+except ImportError:
+    PANEL_NAME_MAP, ENUM_ZH_MAP = {}, {}
 
 FONT_FILE = "NotoSansCJKsc-Regular.otf"
 FONT_GUID = "a1b2c3d4e5f60718293a4b5c6d7e8f90"  # 固定 32 位 guid
@@ -74,6 +77,13 @@ def patch_scene(path):
         return prefix + escape_yaml_double(zh)
 
     s = re.sub(r'(m_Text:\s*)(.*)', do_text, s)
+
+    # 顶部功能按钮文字来自场景的 PanelName 字段（运行时生成按钮），一并汉化。
+    def do_panel(m):
+        prefix, raw = m.group(1), m.group(2).strip().strip("'\"")
+        zh = PANEL_NAME_MAP.get(raw)
+        return prefix + ('"' + zh + '"' if zh else m.group(2))
+    s = re.sub(r'(PanelName:\s*)([^\n]*)', do_panel, s)
 
     # 字体：把内置 Arial 和 RobotoMono(输入框用) 都替换为中文字体引用
     font_hits = s.count(BUILTIN_ARIAL)
@@ -226,6 +236,26 @@ def fix_compile_errors(root):
     return fixed
 
 
+def patch_dropdown_enum(root):
+    """把 UI_Map.cs 里 RemovalItem 下拉框的枚举名翻译成中文显示。
+    原代码：newVal.text = ri;  改为查表显示中文。"""
+    if not ENUM_ZH_MAP:
+        return False
+    p = os.path.join(root, 'Assets', 'Scripts', 'ACNHMS', 'AdditionalPanel', 'UI_Map.cs')
+    if not os.path.exists(p):
+        return False
+    s = open(p, encoding='utf-8-sig', errors='replace').read()
+    old = 'newVal.text = ri;'
+    if old not in s:
+        return False
+    # 用 C# switch 表达式把枚举名翻译成中文，未收录的保持原文（Unity 6 支持 C# 9）
+    arms = ', '.join('"%s" => "%s"' % (k, v) for k, v in ENUM_ZH_MAP.items())
+    helper = 'newVal.text = ri switch { %s, _ => ri };' % arms
+    s = s.replace(old, helper, 1)
+    open(p, 'w', encoding='utf-8', newline='').write(s)
+    return True
+
+
 def main():
     if len(sys.argv) < 2:
         print("usage: python apply_zh_patch.py <UnityProjectRoot>")
@@ -245,6 +275,7 @@ def main():
     stats['language'] = patch_default_language(root)
     stats['font_installed'] = install_font(root)
     stats['compile_fixes'] = fix_compile_errors(root)
+    stats['dropdown_enum'] = patch_dropdown_enum(root)
     print(json.dumps(stats, ensure_ascii=False, indent=2))
 
 
