@@ -1,283 +1,392 @@
 # -*- coding: utf-8 -*-
-"""ACNHMobileSpawner 简体中文汉化补丁。
-在 Unity 构建之前运行，对工程源码做原地修改：
- 1) MainScene.unity 中的静态 UI 文案 -> 中文
- 2) C# 脚本中的运行时字符串 -> 中文
- 3) 注入中文字体（NotoSansCJKsc-Regular.otf），把所有 Text 的字体指向它
- 4) 默认语言改为简体中文 zhs（GameLanguage.DefaultLanguage / UI_Settings 默认值）
-
-用法： python apply_zh_patch.py <Unity工程根目录>
-例如： python apply_zh_patch.py ACNHMS_src/ACNHMS_Source
+"""简体中文文案映射表：英文原文 -> 中文译文。
+用于 ACNHMobileSpawner 汉化补丁。key 为反转义后的纯文本。
 """
-import sys, os, re, json, shutil
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
-from zh_map import SCENE_MAP, SCRIPT_MAP
-try:
-    from zh_map import SCRIPT_MAP_BY_FILE
-except ImportError:
-    SCRIPT_MAP_BY_FILE = {}
-try:
-    from zh_map import PANEL_NAME_MAP, ENUM_ZH_MAP
-except ImportError:
-    PANEL_NAME_MAP, ENUM_ZH_MAP = {}, {}
+# 场景（MainScene.unity）静态 UI 文案
+SCENE_MAP = {
+    "8x8 (\xbd acre)": "8x8（半英亩）",
+    "Flip \u21ba": "翻转 \u21ba",
+    "Freeze \nslots used:": "已用冻结\n槽位：",
+    "Injector \nProtocol:": "注入\n协议：",
+    "South-east \u2198": "东南 \u2198",
+    "Write \u25b2": "写入 \u25b2",
+    '"FeverStart":': '"FeverStart":',  # 内部 key，保留
+    "AM:": "上午：",
+    "Animation speed:": "动画速度：",
+    "Bank RAM Offset:": "银行 RAM 偏移：",
+    "Bank:": "银行：",
+    "Body:": "身体：",
+    "Build:": "建筑：",
+    "Buy price:": "买入价：",
+    "Byte length:": "字节长度：",
+    "Catalogue": "图鉴",
+    "Catchphrase:": "口头禅：",
+    "Day:": "日：",
+    "Delete All: X taps": "全部删除：连点 X 次",
+    "Delete item": "删除物品",
+    "Direction:": "方向：",
+    "Dump all": "全部导出",
+    "Fill row": "填充整行",
+    "Fill variations": "填充变体",
+    "Flower Grid Size:": "花朵网格尺寸：",
+    "Force move out:": "强制搬离：",
+    "Freeze delay:": "冻结延迟：",
+    "Fri:": "周五：",
+    "H:": "H：",
+    "Hour:": "时：",
+    "House Offset:": "房屋偏移：",
+    "Include layer 2:": "包含第 2 层：",
+    "Inventory RAM": "背包 RAM",
+    "Inventory:": "背包：",
+    "Item Search": "物品搜索",
+    "Item multiplier:": "物品倍数：",
+    "Load into:": "载入到：",
+    "Load legacy villager": "载入旧版村民",
+    "Load villager": "载入村民",
+    "Load villager house": "载入村民房屋",
+    "Map RAM Offset:": "地图 RAM 偏移：",
+    "Map:": "地图：",
+    "Max stack: X taps": "最大堆叠：连点 X 次",
+    "Miles (current):": "里程（当前）：",
+    "Miles (earned):": "里程（累计）：",
+    "Miles RAM Offset:": "里程 RAM 偏移：",
+    "Minute:": "分：",
+    "Mon:": "周一：",
+    "Month:": "月：",
+    "Moving out:": "正在搬离：",
+    "Overwrite existing items:": "覆盖已有物品：",
+    "PM:": "下午：",
+    "Parse as:": "解析为：",
+    "Pattern:": "图案：",
+    "Player Index:": "玩家编号：",
+    "Plaza:": "广场：",
+    "Prefix for SysBot.": "SysBot 前缀。",
+    "Preset:": "预设：",
+    "RAM Offset Start:": "RAM 起始偏移：",
+    "Re-fetch ": "重新获取 ",
+    "Requires sys-botbase 1.72 or greater": "需要 sys-botbase 1.72 或更高版本",
+    "Reset": "重置",
+    "Save villager": "保存村民",
+    "Save villager house": "保存村民房屋",
+    "Sell prices:": "出售价：",
+    "Send villager": "发送村民",
+    "Set ": "设置 ",
+    "Set all to:": "全部设为：",
+    "Set to current": "设为当前",
+    "Spawn rectangle dimensions:": "生成矩形尺寸：",
+    "Sprite status:": "贴图状态：",
+    "Sun:": "周日：",
+    "Thread sleep time (ms):": "线程休眠时间（毫秒）：",
+    "Thu:": "周四：",
+    "Time:": "时间：",
+    "Tue:": "周二：",
+    "Turnip Prices:": "大头菜价格：",
+    "Turnip RAM Offset:": "大头菜 RAM 偏移：",
+    "Turnips": "大头菜",
+    "Type:": "类型：",
+    "Unavailable on": "不可用于",
+    "Validate RAM": "校验 RAM",
+    "Villager Offset:": "村民偏移：",
+    "Villager-flags:": "村民标志：",
+    "W:": "W：",
+    "Walk speed:": "行走速度：",
+    "Wallet RAM Offset:": "钱包 RAM 偏移：",
+    "Wallet:": "钱包：",
+    "Wed:": "周三：",
+    "X:": "X：",
+    "Y:": "Y：",
+    "Year:": "年：",
+    "x1": "x1",
+    "{complete}": "{complete}",
+    "16x16 (1 acre)": "16x16（1 英亩）",
+    "32x32 (4 acres)": "32x32（4 英亩）",
+    "<b>></b> Skip 1 Hour": "<b>></b> 跳过 1 小时",
+    "<b>>></b> Skip 1 Day": "<b>>></b> 跳过 1 天",
+    "<no loaded villager>": "<未载入村民>",
+    "ACNH Catalogue": "动森图鉴",
+    "ACNH Mobile Spawner": "动森手机版生成器",
+    "Acre shapes (outside)": "地块形状（室外）",
+    "Always keep items on floor, even after being picked up.": "物品落地后保持",
+    "Back": "返回",
+    "Based on NHSE": "基于 NHSE",
+    "Begin hex edit": "开始十六进制编辑",
+    "Buildings": "建筑",
+    "Bulk spawn": "批量生成",
+    "Button": "按钮",
+    "Cancel": "取消",
+    "Change Item": "更换物品",
+    "Change item to replace": "更改要替换的物品",
+    "Change new item": "更改新物品",
+    "Cheat": "作弊",
+    "Cheat and hex loader": "作弊与十六进制载入器",
+    "Checking for update...": "正在检查更新...",
+    "Choice 1": "选项 1",
+    "Choice 2": "选项 2",
+    "Close": "关闭",
+    "Collision": "碰撞",
+    "Connect": "连接",
+    "Copy drop command": "复制投放指令",
+    "Copy order command": "复制掉落指令",
+    "Count": "数量",
+    "Create new": "新建",
+    "Current item": "当前物品",
+    "DIY Recipes": "DIY 配方",
+    "DIYRecipes": "DIY 配方",
+    "Days": "天",
+    "Delete": "删除",
+    "Delete cached data": "删除缓存数据",
+    "Detach": "断开",
+    "Download sprites": "下载贴图",
+    "Draw with flowers!": "用花朵作画！",
+    "Edit flower": "编辑花朵",
+    "Edit money tree": "编辑摇钱树",
+    "Enter item cheat...": "输入物品作弊码...",
+    "Enter text...": "输入文本...",
+    "Fabric": "布料",
+    "Fetch All": "全部获取",
+    "Fetch Names": "获取名称",
+    "Field Items": "地面物品",
+    'Field item loading require you to press "write" to send changes to your': '载入地面物品后需按“写入”将更改发送到你的',
+    "Fill all": "全部填充",
+    "Find & replace": "查找与替换",
+    "Flag0": "标志0",
+    "Flag1": "标志1",
+    "Flowers will automatically be sent to the bulk spawner.": "花朵将自动发送到批量生成器。",
+    "Fossils": "化石",
+    "Freeze": "冻结",
+    "Friendship with": "友好度：",
+    "Generate template": "生成模板",
+    "Genes": "基因",
+    "Gold can": "金罐",
+    "Help": "帮助",
+    "Hex": "十六进制",
+    "Hex Editor": "十六进制编辑器",
+    "IP Address": "IP 地址",
+    "Initialise freeze data": "初始化冻结数据",
+    "Inventory": "背包",
+    "Item name": "物品名称",
+    "Item removal": "物品移除",
+    "Items": "物品",
+    "Keep item loaded": "保持物品载入",
+    "Landscape Mode": "横屏模式",
+    "Layer 1": "第 1 层",
+    "Load *.nha (acres)": "载入 *.nha（地块）",
+    "Load *.nhb (buildings)": "载入 *.nhb（建筑）",
+    "Load *.nhl (layer 1)": "载入 *.nhl（第 1 层）",
+    "Load *.nhl (layer 2)": "载入 *.nhl（第 2 层）",
+    "Load *.nht (terrain)": "载入 *.nht（地形）",
+    "Load Image": "载入图片",
+    "Load Inventory (*.nhi)": "载入背包 (*.nhi)",
+    "Load and write entire mapdata": "载入并写入全部地图数据",
+    "Load file": "载入文件",
+    "Load items": "载入物品",
+    "Load values": "载入数值",
+    "Load villagers": "载入村民",
+    "Log": "日志",
+    "Main offset": "主偏移",
+    "Map item refreshing": "地图物品刷新",
+    "Map tools": "地图工具",
+    "Match Id Only": "仅匹配 ID",
+    "Money & Miles": "铃钱与里程",
+    "Msg Bottle": "漂流瓶",
+    "NHI file": "NHI 文件",
+    "New Text": "新文本",
+    "New teleport name": "新传送点名称",
+    "No Item Selected": "未选择物品",
+    "No Villager Selected": "未选择村民",
+    "No connection active": "无活动连接",
+    "No item": "无物品",
+    "No items": "无物品",
+    "No villager selected": "未选择村民",
+    "No villagers found": "未找到村民",
+    "Normal": "普通",
+    "Not downloaded": "未下载",
+    "Off": "关",
+    "Offset": "偏移",
+    "Offset (Hex)": "偏移（十六进制）",
+    "On": "开",
+    "Only fill empty inventory spaces?": "仅填充背包空位？",
+    "Open JoyPad": "打开虚拟摇杆",
+    "Open map editor": "打开地图编辑器",
+    "Option A": "选项 A",
+    "Or": "或",
+    "Pause All": "全部暂停",
+    "Place": "放置",
+    "Place nook miles tickets": "放置里程票",
+    "Player A": "玩家 A",
+    "Please use sys-botbase version 1.7 or above for faster and more stable": "请使用 sys-botbase 1.7 或更高版本以获得更快更稳定的",
+    "Prefix": "前缀",
+    "Read RAM": "读取 RAM",
+    "Read USB": "读取 USB",
+    "Read and dump entire mapdata": "读取并导出全部地图数据",
+    "Refresher not run.": "刷新器未运行。",
+    "Refresher visitor log": "刷新器访客日志",
+    "Reload villager before writing changes?": "写入前重载村民？",
+    "Replace villager": "替换村民",
+    "Replace!": "替换！",
+    "Requires sys-botbase 1.7 or greater": "需要 sys-botbase 1.7 或更高版本",
+    "Restore Time": "恢复时间",
+    "Return": "返回",
+    "Revert to original": "恢复原样",
+    "Run item refresher": "运行物品刷新器",
+    "Save *.nha (acres)": "保存 *.nha（地块）",
+    "Save *.nhb (buildings)": "保存 *.nhb（建筑）",
+    "Save *.nhl (layer 2)": "保存 *.nhl（第 2 层）",
+    "Save *.nht (terrain)": "保存 *.nht（地形）",
+    "Save current inventory": "保存当前背包",
+    "Save villager changes": "保存村民更改",
+    "Save/load villager files": "存取村民文件",
+    "Screen on/off": "屏幕开/关",
+    "Search": "搜索",
+    "Search villager name": "搜索村民名称",
+    "Send Delay": "发送延迟",
+    "Send villager": "发送村民",
+    "Set Time": "设置时间",
+    "Set all body variations": "设置全部身体变体",
+    "Set plaza position": "设置广场位置",
+    "Set turnips": "设置大头菜",
+    "Set values": "设置数值",
+    "Show item name": "显示物品名称",
+    "Size (Decimal)": "尺寸（十进制）",
+    "Sleep time": "休眠时间",
+    "Socket": "套接字",
+    "Some map functions can take up to a minute or longer depending on your": "部分地图功能可能较慢",
+    "Some things will still collide": "部分物品仍会碰撞",
+    "Spawn items!": "生成物品！",
+    "Sprite fetcher inactive.": "贴图获取器未启用。",
+    "Sprites require ~200MB free space.": "贴图需要约 200MB 可用空间。",
+    "Tap to check": "点击检查",
+    "Teleport": "传送",
+    "Teleport Name (Town Name)": "传送点名称（城镇名称）",
+    "Terrain": "地形",
+    "Text & Dialogue speed": "文字与对话速度",
+    "The below edits are useful for setting paths/fences/furniture very quickly.": "以下编辑功能可用于快速设置路径/栅栏/家具。",
+    "The tree will still have this icon in your inventory in-game. You need": "游戏中你的背包内该树仍会显示此图标。你需要",
+    "Time and Speed": "时间与速度",
+    "Tree has fully grown items?": "树是否已长成物品？",
+    "UnFreeze": "取消冻结",
+    "UnFreeze All": "全部取消冻结",
+    "Unpause All": "全部取消暂停",
+    "Update search": "更新搜索",
+    "Uses": "用途",
+    "Value": "数值",
+    "Value Freeze": "数值冻结",
+    "Villager": "村民",
+    "Villager and/or house will be overwritten immediately!": "村民和/或房屋将被立即覆盖！",
+    "Villager will be overwritten immediately": "村民将被立即覆盖",
+    "Villagers not loaded": "村民未载入",
+    "Villagers watered": "村民已浇水",
+    "Virtual Controls": "虚拟按键",
+    "Watered": "已浇水",
+    "Watering": "浇水中",
+    "Wrap": "包装纸",
+    "Write Changes": "写入更改",
+    "Write USB": "写入 USB",
+    "You cannot go online with time changes, you must restart the game": "修改时间后无法联机，你必须重启游戏",
+    "x2": "x2",
+    "x4": "x4",
+    "x50": "x50",
+    # —— 以下为完整场景末尾补充的文案（原文带前导单引号的按原样作为 key）——
+    "'Catalogue": "图鉴",
+    "'Delete item": "删除物品",
+    "'Dump all": "全部导出",
+    "'Fill row": "填充整行",
+    "'Fill variations": "填充变体",
+    "'Inventory RAM": "背包 RAM",
+    "'Item Search": "物品搜索",
+    "'Load legacy villager": "载入旧版村民",
+    "'Load villager": "载入村民",
+    "'Load villager house": "载入村民房屋",
+    "'Prefix for SysBot.": "SysBot 前缀。",
+    "'Requires sys-botbase 1.72 or greater": "需要 sys-botbase 1.72 或更高版本",
+    "'Reset": "重置",
+    "'Save villager": "保存村民",
+    "'Save villager house": "保存村民房屋",
+    "'Send villager": "发送村民",
+    "'Set to current": "设为当前",
+    "'SysBot.AnimalCrossing": "SysBot.AnimalCrossing",  # 项目名，保留
+    "'Turnips": "大头菜",
+    "'Unavailable on": "不可用于",
+    "'Validate RAM": "校验 RAM",
+    "*.nhi": "*.nhi",  # 文件扩展名，保留
+    "Berichan": "Berichan",  # 作者名，保留
+    "Current Player: ???": "当前玩家：???",
+    "Custom:": "自定义：",
+    "Data Language:": "数据语言：",
+    "Edit flower data": "编辑花朵数据",
+    "Initialise": "初始化",
+    "Instant": "瞬间",
+    "Items will spawn from here.": "物品将在此处生成。",
+    "Load turnips": "载入大头菜",
+    "Poki": "Poki",  # 专有名词，保留
+    "Reload last backup": "重新载入上次备份",
+    "Remove all weeds": "清除所有杂草",
+    "Sat:": "周六：",
+    "Save *.nhl (layer 1)": "保存 *.nhl（第 1 层）",
+    "Save current teleport location": "保存当前传送点位置",
+    "Save visitor log (.txt)": "保存访客日志 (.txt)",
+    "Search For USB": "搜索 USB",
+    "Settings": "设置",
+    "Value freezing allows almost instant regeneration and will work without": "数值冻结可实现近乎瞬间的恢复，且无需",
+    "Villagers": "村民",
+    "freeze count": "冻结次数",
+}
 
-FONT_FILE = "NotoSansCJKsc-Regular.otf"
-FONT_GUID = "a1b2c3d4e5f60718293a4b5c6d7e8f90"  # 固定 32 位 guid
-BUILTIN_ARIAL = "{fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}"
-# 项目自带的等宽字体 RobotoMono，被 IP/端口/十六进制数值等输入框使用。
-# 它在 iOS 上不渲染，必须一并替换成中文字体，否则这些输入框显示空白。
-ROBOTO_MONO = "{fileID: 12800000, guid: c4b417931926fac47923d5f75f316c95, type: 3}"
-CJK_FONT_REF = "{fileID: 12800000, guid: %s, type: 3}" % FONT_GUID
+# 脚本（C#）运行时字符串：英文原文 -> 中文译文
+SCRIPT_MAP = {
+    "Copy to clipboard": "复制到剪贴板",
+    "No valid items.": "没有有效物品。",
+    "Cannot parse {OffsetField.text} as a hexadecimal value.": "无法将 {OffsetField.text} 解析为十六进制值。",
+    "Cannot parse {SizeField.text}.": "无法解析 {SizeField.text}。",
+    "Fetching {creating}": "正在获取 {creating}",
+    "Creating freezers for {creating}": "正在为 {creating} 创建冻结器",
+    "Successfully created freezers for {creating}!": "已成功为 {creating} 创建冻结器！",
+    # "Cancel" 已移除：该词在场景按钮中由 SCENE_MAP 覆盖，
+    # 在 C# 里多为 CancellationToken 等标识符，全局替换会误伤网络脚本。
+    "Stop refreshing": "停止刷新",
+    "Username limit reached!": "用户名已达上限！",
+    "Found {0}, Count: {1}": "找到 {0}，数量：{1}",
+    "Really delete anchor {pra.Name}? This action cannot be reversed.": "确定删除传送点 {pra.Name}？此操作无法撤销。",
+    "Yes, delete it": "是，删除",
+    "Player {0}": "玩家 {0}",
+    "Are you sure you want to clear all cached data and settings? This action is irreversible.": "确定要清除所有缓存数据和设置吗？此操作不可撤销。",
+    "Yes, delete it!": "是，删除！",
+    "All cached data deleted. Please restart ACNHMS": "所有缓存数据已删除。请重启 ACNHMS",
+    "Connection failed: ": "连接失败：",
+    "Connected successfully": "连接成功",
+    "USB connection failed: Check popup": "USB 连接失败：请查看弹窗",
+    "USB connected": "USB 已连接",
+}
 
+# 顶部功能按钮的场景字段名 PanelName（运行时生成按钮文字，不在 m_Text 里）
+PANEL_NAME_MAP = {
+    "Time/Speed": "时间/速度",
+    "Teleport": "传送",
+    "Value Freeze": "数值冻结",
+    "Money&Miles": "铃钱与里程",
+    "Map Tools": "地图工具",
+    "Parser": "解析器",
+    "Hex Edit": "十六进制编辑",
+    "Virtual Switch Control": "虚拟 Switch 控制",
+    "Turnips": "大头菜",
+    "Villagers": "村民",
+}
 
-def unescape(v):
-    v = v.replace('\\"', '"').replace('\\\\', '\\')
-    v = v.replace('\\n', '\n').replace('\\t', '\t').replace('\\r', '\r')
-    def u(m):
-        try:
-            return chr(int(m.group(1), 16))
-        except Exception:
-            return m.group(0)
-    v = re.sub(r'\\u([0-9a-fA-F]{4})', u, v)
-    v = re.sub(r'\\x([0-9a-fA-F]{2})', u, v)
-    return v
+# RemovalItem 枚举值的中文名（下拉框选项，运行时 Enum.GetNames 生成）
+ENUM_ZH_MAP = {
+    "Weed": "杂草", "TreeBranch": "树枝", "Fence": "栅栏", "Bush": "灌木",
+    "Flower": "花朵", "Tree": "树木", "Item": "物品", "All": "全部",
+}
 
-
-def parse_scalar(raw):
-    raw = raw.strip()
-    if len(raw) >= 2 and raw.startswith('"') and raw.endswith('"'):
-        return True, unescape(raw[1:-1])
-    if len(raw) >= 2 and raw.startswith("'") and raw.endswith("'"):
-        return True, raw[1:-1].replace("''", "'")
-    return False, raw
-
-
-def escape_yaml_double(text):
-    # Unity/YAML 双引号标量转义
-    text = text.replace('\\', '\\\\').replace('"', '\\"')
-    text = text.replace('\n', '\\n').replace('\t', '\\t').replace('\r', '\\r')
-    return '"' + text + '"'
-
-
-def patch_scene(path):
-    with open(path, encoding='utf-8-sig', errors='replace') as f:
-        s = f.read()
-    replaced = 0
-
-    def do_text(m):
-        nonlocal replaced
-        prefix, raw = m.group(1), m.group(2)
-        quoted, plain = parse_scalar(raw)
-        zh = SCENE_MAP.get(plain)
-        if zh is None or zh == plain:
-            return m.group(0)
-        replaced += 1
-        return prefix + escape_yaml_double(zh)
-
-    s = re.sub(r'(m_Text:\s*)(.*)', do_text, s)
-
-    # 顶部功能按钮文字来自场景的 PanelName 字段（运行时生成按钮），一并汉化。
-    def do_panel(m):
-        prefix, raw = m.group(1), m.group(2).strip().strip("'\"")
-        zh = PANEL_NAME_MAP.get(raw)
-        return prefix + ('"' + zh + '"' if zh else m.group(2))
-    s = re.sub(r'(PanelName:\s*)([^\n]*)', do_panel, s)
-
-    # 字体：把内置 Arial 和 RobotoMono(输入框用) 都替换为中文字体引用
-    font_hits = s.count(BUILTIN_ARIAL)
-    s = s.replace(BUILTIN_ARIAL, CJK_FONT_REF)
-    font_hits += s.count(ROBOTO_MONO)
-    s = s.replace(ROBOTO_MONO, CJK_FONT_REF)
-
-    # 中文字体 Noto Sans CJK SC 行高约 1.45em，比原来的 Arial(约1.0em)高很多。
-    # 原本按英文高度设计的输入框标签(如 Mon:/AM:，框高约44px < 中文字行高52px)，
-    # 换成中文字体后会被 VerticalOverflow=Truncate 整行裁掉 → 文字完全不显示。
-    # 对所有含中文的 Text 组件，把水平/垂直溢出都改为 Overflow，避免被裁剪。
-    overflow_fixed = 0
-    blocks = re.split(r'(?=--- !u!)', s)
-    fixed_blocks = []
-    for blk in blocks:
-        tm = re.search(r'm_Text:\s*(.*)', blk)
-        if tm and re.search(r'[\u4e00-\u9fff]', tm.group(1)):
-            new_blk = blk.replace('m_HorizontalOverflow: 0', 'm_HorizontalOverflow: 1')
-            new_blk = new_blk.replace('m_VerticalOverflow: 0', 'm_VerticalOverflow: 1')
-            if new_blk != blk:
-                overflow_fixed += 1
-            fixed_blocks.append(new_blk)
-        else:
-            fixed_blocks.append(blk)
-    s = ''.join(fixed_blocks)
-
-    with open(path, 'w', encoding='utf-8', newline='') as f:
-        f.write(s)
-    return replaced, font_hits
-
-
-def patch_scripts(root):
-    changed, hits = [], 0
-    for dirpath, _, files in os.walk(os.path.join(root, 'Assets', 'Scripts')):
-        for name in files:
-            if not name.endswith('.cs'):
-                continue
-            p = os.path.join(dirpath, name)
-            with open(p, encoding='utf-8-sig', errors='replace') as f:
-                src = f.read()
-            orig = src
-            # 通用映射 + 仅对本文件生效的定向映射
-            local_map = dict(SCRIPT_MAP)
-            local_map.update(SCRIPT_MAP_BY_FILE.get(name, {}))
-            def repl(m):
-                nonlocal hits
-                plain = m.group(1).replace('\\"', '"').replace('\\n', '\n')
-                zh = local_map.get(plain)
-                if zh is None:
-                    return m.group(0)
-                hits += 1
-                return '"' + zh.replace('"', '\\"').replace('\n', '\\n') + '"'
-            src = re.sub(r'"((?:[^"\\]|\\.)*)"', repl, src)
-            if src != orig:
-                with open(p, 'w', encoding='utf-8', newline='') as f:
-                    f.write(src)
-                changed.append(name)
-    return changed, hits
-
-
-def patch_default_language(root):
-    """默认语言改为 zhs（索引 7）"""
-    notes = []
-    # GameLanguage.cs
-    gl = os.path.join(root, 'Assets', 'Scripts', 'Core', 'Strings', 'GameLanguage.cs')
-    if os.path.exists(gl):
-        s = open(gl, encoding='utf-8-sig', errors='replace').read()
-        s2 = s.replace('public const string DefaultLanguage = "en";',
-                       'public const string DefaultLanguage = "zhs";')
-        if s2 != s:
-            open(gl, 'w', encoding='utf-8', newline='').write(s2)
-            notes.append('GameLanguage.DefaultLanguage -> zhs')
-    # UI_Settings.cs 默认语言索引：GetLanguage(int defLang = 0) -> 7
-    us = os.path.join(root, 'Assets', 'Scripts', 'ACNHMS', 'UI_Settings.cs')
-    if os.path.exists(us):
-        s = open(us, encoding='utf-8-sig', errors='replace').read()
-        s2 = re.sub(r'GetLanguage\(int defLang = 0\)', 'GetLanguage(int defLang = 7)', s)
-        if s2 != s:
-            open(us, 'w', encoding='utf-8', newline='').write(s2)
-            notes.append('UI_Settings.GetLanguage default -> 7(zhs)')
-    return notes
-
-
-def install_font(root):
-    """把中文字体放进 Assets/Fonts 并生成 .meta"""
-    fonts_dir = os.path.join(root, 'Assets', 'Fonts')
-    os.makedirs(fonts_dir, exist_ok=True)
-    src = os.path.join(HERE, FONT_FILE)
-    dst = os.path.join(fonts_dir, FONT_FILE)
-    if os.path.exists(src):
-        shutil.copyfile(src, dst)
-    meta = os.path.join(fonts_dir, FONT_FILE + '.meta')
-    # 若 meta 不存在，或是旧版本（缺 externalObjects 字段），都重写为完整模板
-    need_meta = True
-    if os.path.exists(meta):
-        existing = open(meta, encoding='utf-8', errors='replace').read()
-        guid_line = [l for l in existing.splitlines() if l.strip().startswith('guid:')]
-        valid_guid = bool(guid_line) and FONT_GUID in guid_line[0] and '%s' not in existing
-        if 'externalObjects' in existing and 'assetBundleVariant' in existing and valid_guid:
-            need_meta = False
-    if need_meta:
-        with open(meta, 'w', encoding='utf-8', newline='') as f:
-            f.write((
-                "fileFormatVersion: 2\n"
-                "guid: %s\n"
-                "TrueTypeFontImporter:\n"
-                "  externalObjects: {}\n"
-                "  serializedVersion: 4\n"
-                "  fontSize: 16\n"
-                "  forceTextureCase: -2\n"
-                "  characterSpacing: 0\n"
-                "  characterPadding: 1\n"
-                "  includeFontData: 1\n"
-                "  fontName: Noto Sans CJK SC\n"
-                "  fontNames:\n"
-                "  - Noto Sans CJK SC\n"
-                "  fallbackFontReferences: []\n"
-                "  customCharacters: \n"
-                "  fontRenderingMode: 0\n"
-                "  ascentCalculationMode: 1\n"
-                "  useLegacyBoundsCalculation: 0\n"
-                "  shouldRoundAdvanceValue: 1\n"
-                "  userData: \n"
-                "  assetBundleName: \n"
-                "  assetBundleVariant: \n"
-            ) % FONT_GUID)
-    return os.path.exists(dst)
-
-
-def fix_compile_errors(root):
-    """修复原工程自身在较新 NHSE.Core 库下的两个编译错误（与汉化无关）。
-    ItemInfo.cs 的堆叠数量字典引用了 ItemKind 枚举中不存在的两个成员，
-    导致 Unity 6 编译时报 CS0103。注释掉这两行即可（对应物品类型在当前库中不存在）。
-    """
-    p = os.path.join(root, 'Assets', 'Scripts', 'Core', 'Structures', 'Item', 'ItemInfo.cs')
-    if not os.path.exists(p):
-        return []
-    s = open(p, encoding='utf-8-sig', errors='replace').read()
-    orig = s
-    fixed = []
-    for kind in ('Kind_SubToolEat', 'Kind_XmasDeco'):
-        # 精确匹配字典行：{Kind_xxx, 数字},  —— 注意不能误伤 Kind_SubToolEatDrop / Remakeable
-        pattern = r'(\s*)\{' + re.escape(kind) + r',\s*[0-9]+\},'
-        def repl(m):
-            fixed.append(kind)
-            return m.group(1) + '// [zh-patch] disabled: undefined enum member ' + kind
-        s = re.sub(pattern, repl, s)
-    if s != orig:
-        open(p, 'w', encoding='utf-8', newline='').write(s)
-    return fixed
-
-
-def patch_dropdown_enum(root):
-    """把 UI_Map.cs 里 RemovalItem 下拉框的枚举名翻译成中文显示。
-    原代码：newVal.text = ri;  改为查表显示中文。"""
-    if not ENUM_ZH_MAP:
-        return False
-    p = os.path.join(root, 'Assets', 'Scripts', 'ACNHMS', 'AdditionalPanel', 'UI_Map.cs')
-    if not os.path.exists(p):
-        return False
-    s = open(p, encoding='utf-8-sig', errors='replace').read()
-    old = 'newVal.text = ri;'
-    if old not in s:
-        return False
-    # 用 C# switch 表达式把枚举名翻译成中文，未收录的保持原文（Unity 6 支持 C# 9）
-    arms = ', '.join('"%s" => "%s"' % (k, v) for k, v in ENUM_ZH_MAP.items())
-    helper = 'newVal.text = ri switch { %s, _ => ri };' % arms
-    s = s.replace(old, helper, 1)
-    open(p, 'w', encoding='utf-8', newline='').write(s)
-    return True
-
-
-def main():
-    if len(sys.argv) < 2:
-        print("usage: python apply_zh_patch.py <UnityProjectRoot>")
-        sys.exit(1)
-    root = sys.argv[1]
-    scene = os.path.join(root, 'Assets', 'Scenes', 'MainScene.unity')
-    stats = {}
-    if os.path.exists(scene):
-        n, f = patch_scene(scene)
-        stats['scene_texts'] = n
-        stats['font_refs'] = f
-    else:
-        stats['scene_error'] = 'MainScene.unity not found'
-    changed, hits = patch_scripts(root)
-    stats['script_files'] = changed
-    stats['script_hits'] = hits
-    stats['language'] = patch_default_language(root)
-    stats['font_installed'] = install_font(root)
-    stats['compile_fixes'] = fix_compile_errors(root)
-    stats['dropdown_enum'] = patch_dropdown_enum(root)
-    print(json.dumps(stats, ensure_ascii=False, indent=2))
-
-
-if __name__ == '__main__':
-    main()
+# 按文件定向替换：这些短词太通用，只在指定的 UI_Freeze.cs 内替换，避免误伤
+# 键为文件名（basename），值为 {英文: 中文}
+SCRIPT_MAP_BY_FILE = {
+    "UI_Freeze.cs": {
+        "villager flags": "村民标志",
+        "inventory": "背包",
+        "map": "地图",
+        "wallet": "钱包",
+        "turnip prices": "大头菜价格",
+    },
+}
