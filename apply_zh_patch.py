@@ -76,6 +76,34 @@ def patch_scene(path):
         replaced += 1
         return prefix + escape_yaml_double(zh)
 
+    # 跨行单引号标量必须先处理：Unity 会把长文本存成 "m_Text: 'Fill row\n\n    (row 0)'"，
+    # 若先跑单行正则，\s* 会吃掉换行破坏结构，导致跨行永远匹配不到。
+    def do_multiline(m):
+        nonlocal replaced
+        prefix = m.group(1)
+        body = m.group(2)
+        if not body.startswith("'"):
+            return m.group(0)
+        # 去掉首尾单引号，把空行/缩进合并成单个空格
+        inner = body[1:]
+        if inner.endswith("'"):
+            inner = inner[:-1]
+        parts = [p.strip() for p in inner.split('\n') if p.strip()]
+        plain = ' '.join(parts)
+        zh = SCENE_MAP.get(plain)
+        if zh is None:
+            # 也试去掉括号数字的形态，如 "Set to current (39)" -> "Set to current"
+            import re as _re
+            base = _re.sub(r'\s*\([^)]*\)\s*$', '', plain)
+            zh = SCENE_MAP.get(base)
+        if zh is None:
+            return m.group(0)
+        replaced += 1
+        return prefix + escape_yaml_double(zh)
+
+    s = re.sub(r'(m_Text:\s*)(\'[^\n]*\n(?:\s*\n)*\s*[^\n]*\')', do_multiline, s)
+
+    # 再处理普通单行 m_Text
     s = re.sub(r'(m_Text:\s*)(.*)', do_text, s)
 
     # 顶部功能按钮文字来自场景的 PanelName 字段（运行时生成按钮），一并汉化。
@@ -94,13 +122,13 @@ def patch_scene(path):
     # 中文字体 Noto Sans CJK SC 行高约 1.45em，比原来的 Arial(约1.0em)高很多。
     # 原本按英文高度设计的输入框标签(如 Mon:/AM:，框高约44px < 中文字行高52px)，
     # 换成中文字体后会被 VerticalOverflow=Truncate 整行裁掉 → 文字完全不显示。
-    # 对所有含中文的 Text 组件，把水平/垂直溢出都改为 Overflow，避免被裁剪。
+    # 对所有 Text 组件（含 m_FontData 的块），把水平/垂直溢出都改为 Overflow。
+    # 不仅中文标签，IP/Socket 等输入框的默认数字(192.168.0.1)同样会因中文字体行高被裁掉。
     overflow_fixed = 0
     blocks = re.split(r'(?=--- !u!)', s)
     fixed_blocks = []
     for blk in blocks:
-        tm = re.search(r'm_Text:\s*(.*)', blk)
-        if tm and re.search(r'[\u4e00-\u9fff]', tm.group(1)):
+        if 'm_FontData:' in blk and 'm_Text:' in blk:
             new_blk = blk.replace('m_HorizontalOverflow: 0', 'm_HorizontalOverflow: 1')
             new_blk = new_blk.replace('m_VerticalOverflow: 0', 'm_VerticalOverflow: 1')
             if new_blk != blk:
