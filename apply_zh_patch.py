@@ -1,311 +1,215 @@
-# -*- coding: utf-8 -*-
-"""ACNHMobileSpawner 简体中文汉化补丁。
-在 Unity 构建之前运行，对工程源码做原地修改：
- 1) MainScene.unity 中的静态 UI 文案 -> 中文
- 2) C# 脚本中的运行时字符串 -> 中文
- 3) 注入中文字体（NotoSansCJKsc-Regular.otf），把所有 Text 的字体指向它
- 4) 默认语言改为简体中文 zhs（GameLanguage.DefaultLanguage / UI_Settings 默认值）
+name: 构建中文 IPA (ACNHMobileSpawner) v3
 
-用法： python apply_zh_patch.py <Unity工程根目录>
-例如： python apply_zh_patch.py ACNHMS_src/ACNHMS_Source
-"""
-import sys, os, re, json, shutil
+on:
+  workflow_dispatch:
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
-from zh_map import SCENE_MAP, SCRIPT_MAP
-try:
-    from zh_map import SCRIPT_MAP_BY_FILE
-except ImportError:
-    SCRIPT_MAP_BY_FILE = {}
-try:
-    from zh_map import PANEL_NAME_MAP, ENUM_ZH_MAP
-except ImportError:
-    PANEL_NAME_MAP, ENUM_ZH_MAP = {}, {}
+jobs:
+  build-ipa:
+    name: 汉化并构建中文 IPA
+    runs-on: macos-15-intel
+    timeout-minutes: 180
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          lfs: true
 
-FONT_FILE = "NotoSansCJKsc-Regular.otf"
-FONT_GUID = "a1b2c3d4e5f60718293a4b5c6d7e8f90"  # 固定 32 位 guid
-BUILTIN_ARIAL = "{fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}"
-# 项目自带的等宽字体 RobotoMono，被 IP/端口/十六进制数值等输入框使用。
-# 它在 iOS 上不渲染，必须一并替换成中文字体，否则这些输入框显示空白。
-ROBOTO_MONO = "{fileID: 12800000, guid: c4b417931926fac47923d5f75f316c95, type: 3}"
-CJK_FONT_REF = "{fileID: 12800000, guid: %s, type: 3}" % FONT_GUID
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
+      - name: 下载中文字体
+        run: |
+          URL="https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf"
+          curl -fL --retry 4 --retry-delay 3 -o NotoSansCJKsc-Regular.otf "$URL" \
+            || curl -fL --retry 4 -o NotoSansCJKsc-Regular.otf \
+              "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf"
+          test -s NotoSansCJKsc-Regular.otf
 
-def unescape(v):
-    v = v.replace('\\"', '"').replace('\\\\', '\\')
-    v = v.replace('\\n', '\n').replace('\\t', '\t').replace('\\r', '\r')
-    def u(m):
-        try:
-            return chr(int(m.group(1), 16))
-        except Exception:
-            return m.group(0)
-    v = re.sub(r'\\u([0-9a-fA-F]{4})', u, v)
-    v = re.sub(r'\\x([0-9a-fA-F]{2})', u, v)
-    return v
+      - name: 应用简体中文补丁
+        run: |
+          export PYTHONDONTWRITEBYTECODE=1
+          python apply_zh_patch.py ACNHMS_Source
 
+      - name: 提交汉化改动（保持分支干净）
+        run: |
+          git config user.name "CI Builder"
+          git config user.email "ci@builder.local"
+          git add -A
+          git -c commit.gpgsign=false commit -m "Apply zh-CN localization patch" || echo "nothing to commit"
 
-def parse_scalar(raw):
-    raw = raw.strip()
-    if len(raw) >= 2 and raw.startswith('"') and raw.endswith('"'):
-        return True, unescape(raw[1:-1])
-    if len(raw) >= 2 and raw.startswith("'") and raw.endswith("'"):
-        return True, raw[1:-1].replace("''", "'")
-    return False, raw
+      # 用 Unity 官方 CLI 安装编辑器和 iOS 模块（已验证在 runner 上工作正常）
+      - name: 安装 Unity 6000.3.4f1 + iOS 模块
+        run: |
+          curl -fsSL https://unity.com/install.sh | bash
+          # macOS 上该脚本默认装到 ~/.unity/bin/unity（home 模式），Linux 才是 ~/.local/bin。
+          # 逐一探测，找到可用的 unity CLI 绝对路径，避免依赖 shell 重启后才生效的 PATH。
+          UNITY_CLI=""
+          for c in "$HOME/.unity/bin/unity" "$HOME/.local/bin/unity" "$(command -v unity 2>/dev/null)"; do
+            if [ -n "$c" ] && [ -x "$c" ]; then UNITY_CLI="$c"; break; fi
+          done
+          if [ -z "$UNITY_CLI" ]; then
+            UNITY_CLI=$(find "$HOME" -maxdepth 5 -type f -name unity -perm -u+x 2>/dev/null | head -n 1)
+          fi
+          echo "unity CLI: $UNITY_CLI"
+          test -n "$UNITY_CLI" && test -x "$UNITY_CLI"
+          "$UNITY_CLI" install 6000.3.4f1 -m ios -a x86_64 --cm --accept-eula --yes
+          "$UNITY_CLI" editors -i
+          test -x "/Applications/Unity/Hub/Editor/6000.3.4f1/Unity.app/Contents/MacOS/Unity"
 
+      # 写入自定义 build script：从激活的场景构建 iOS Xcode 工程，输出到 build/iOS
+      - name: 写入构建脚本
+        run: |
+          mkdir -p ACNHMS_Source/Assets/Editor
+          cat > ACNHMS_Source/Assets/Editor/CIBuild.cs <<'CS'
+          using System;
+          using System.Linq;
+          using UnityEditor;
+          using UnityEditor.Build.Reporting;
+          using UnityEngine;
 
-def escape_yaml_double(text):
-    # Unity/YAML 双引号标量转义
-    text = text.replace('\\', '\\\\').replace('"', '\\"')
-    text = text.replace('\n', '\\n').replace('\t', '\\t').replace('\r', '\\r')
-    return '"' + text + '"'
+          public static class CIBuild
+          {
+              public static void BuildIOS()
+              {
+                  // ---- 字体自检：确认中文字体被正确导入 ----
+                  var fontPath = "Assets/Fonts/NotoSansCJKsc-Regular.otf";
+                  var f = AssetDatabase.LoadAssetAtPath<Font>(fontPath);
+                  Debug.Log("[ZH-FONT] exists=" + System.IO.File.Exists(fontPath) + " loaded=" + (f != null));
+                  if (f != null)
+                  {
+                      Debug.Log("[ZH-FONT] name=" + f.name + " dynamic=" + f.dynamic +
+                                " fontSize=" + f.fontSize + " textureCount=" + f.fontNames.Length);
+                      Debug.Log("[ZH-FONT] fontNames=" + string.Join("|", f.fontNames));
+                  }
+                  else
+                  {
+                      Debug.LogError("[ZH-FONT] FAILED to load Chinese font - text will be blank!");
+                  }
+                  var scenes = EditorBuildSettings.scenes
+                      .Where(s => s.enabled)
+                      .Select(s => s.path)
+                      .ToArray();
+                  if (scenes.Length == 0)
+                  {
+                      Debug.LogError("No enabled scenes in Build Settings!");
+                      EditorApplication.Exit(1);
+                      return;
+                  }
+                  Debug.Log("Building scenes: " + string.Join(", ", scenes));
+                  // 用环境变量传入的绝对路径，确保 Xcode 工程输出到仓库根目录的 build/iOS
+                  var outDir = System.Environment.GetEnvironmentVariable("CI_BUILD_OUTPUT");
+                  if (string.IsNullOrEmpty(outDir))
+                      outDir = "build/iOS";
+                  Debug.Log("Build output: " + outDir);
+                  var opts = new BuildPlayerOptions
+                  {
+                      scenes = scenes,
+                      locationPathName = outDir,
+                      target = BuildTarget.iOS,
+                      options = BuildOptions.None
+                  };
+                  var report = BuildPipeline.BuildPlayer(opts);
+                  Debug.Log("Build result: " + report.summary.result);
+                  if (report.summary.result != BuildResult.Succeeded)
+                      EditorApplication.Exit(1);
+              }
+          }
+          CS
+          git add -f ACNHMS_Source/Assets/Editor/CIBuild.cs
+          git -c commit.gpgsign=false commit -m "Add CI build script" || echo "nothing to commit"
 
+      # 显式激活个人 NUL 许可证（GameCI v6 已验证这套参数对个人账号有效）
+      - name: 激活 Unity 个人许可证
+        run: |
+          LC="/Applications/Unity/Hub/Editor/6000.3.4f1/Unity.app/Contents/Helpers/UnityLicensingClient.app/Contents/MacOS/Unity.Licensing.Client"
+          ls -l "$LC"
+          "$LC" --activate-all --include-personal --username "$UNITY_EMAIL" --password "$UNITY_PASSWORD"
+          echo "---- license activated ----"
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
-def patch_scene(path):
-    with open(path, encoding='utf-8-sig', errors='replace') as f:
-        s = f.read()
-    replaced = 0
+      # 直接用 Unity 可执行文件构建，日志写入文件（不像 GameCI 那样删掉）
+      - name: Unity 构建 iOS Xcode 工程
+        timeout-minutes: 120
+        run: |
+          UNITY="/Applications/Unity/Hub/Editor/6000.3.4f1/Unity.app/Contents/MacOS/Unity"
+          "$UNITY" \
+            -batchmode \
+            -nographics \
+            -quit \
+            -logFile "$PWD/unity-build.log" \
+            -projectPath "$PWD/ACNHMS_Source" \
+            -buildTarget iOS \
+            -username "$UNITY_EMAIL" \
+            -password "$UNITY_PASSWORD" \
+            -executeMethod CIBuild.BuildIOS
+          STATUS=$?
+          echo "Unity exit code: $STATUS"
+          echo "========== UNITY BUILD LOG (errors) =========="
+          grep -iE "error|exception|failed|abort|Build result|Building scenes" unity-build.log | tail -100 || true
+          # 把所有可能的编译错误做成 annotation，直接显示在 Actions 页面顶部（也可从 API 读取）
+          grep -iE "error CS[0-9]+|\.cs\([0-9]+|Scripts have compiler errors|error:|Compilation failed|error [A-Z]+[0-9]+" \
+            unity-build.log 2>/dev/null | sort -u | head -25 | while IFS= read -r line; do
+            echo "::error::${line:0:500}"
+          done || true
+          echo "========== UNITY BUILD LOG (tail) =========="
+          tail -80 unity-build.log || true
+          echo "========== BUILD OUTPUT =========="
+          find build -maxdepth 5 \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) -print 2>/dev/null || true
+          echo "---- also check project-local build dir ----"
+          find ACNHMS_Source/build -maxdepth 5 \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) -print 2>/dev/null || true
+          exit $STATUS
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          CI_BUILD_OUTPUT: ${{ github.workspace }}/build/iOS
 
-    def do_text(m):
-        nonlocal replaced
-        prefix, raw = m.group(1), m.group(2)
-        quoted, plain = parse_scalar(raw)
-        zh = SCENE_MAP.get(plain)
-        if zh is None or zh == plain:
-            return m.group(0)
-        replaced += 1
-        return prefix + escape_yaml_double(zh)
+      - name: 上传构建日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-build-log
+          path: unity-build.log
+          if-no-files-found: warn
+          retention-days: 7
 
-    # 跨行单引号标量必须先处理：Unity 会把长文本存成 "m_Text: 'Fill row\n\n    (row 0)'"，
-    # 若先跑单行正则，\s* 会吃掉换行破坏结构，导致跨行永远匹配不到。
-    def do_multiline(m):
-        nonlocal replaced
-        prefix = m.group(1)
-        body = m.group(2)
-        if not body.startswith("'"):
-            return m.group(0)
-        # 去掉首尾单引号，把空行/缩进合并成单个空格
-        inner = body[1:]
-        if inner.endswith("'"):
-            inner = inner[:-1]
-        parts = [p.strip() for p in inner.split('\n') if p.strip()]
-        plain = ' '.join(parts)
-        zh = SCENE_MAP.get(plain)
-        if zh is None:
-            # 也试去掉括号数字的形态，如 "Set to current (39)" -> "Set to current"
-            import re as _re
-            base = _re.sub(r'\s*\([^)]*\)\s*$', '', plain)
-            zh = SCENE_MAP.get(base)
-        if zh is None:
-            return m.group(0)
-        replaced += 1
-        return prefix + escape_yaml_double(zh)
+      - name: 选择最新 Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
-    s = re.sub(r'(m_Text:\s*)(\'[^\n]*\n(?:\s*\n)*\s*[^\n]*\')', do_multiline, s)
+      - name: 归档 (无签名)
+        run: |
+          # 在两个可能位置查找 Unity 导出的 Xcode 工程
+          WS=$(find build ACNHMS_Source/build -maxdepth 6 -name "*.xcworkspace" 2>/dev/null | head -n 1)
+          PROJ=$(find build ACNHMS_Source/build -maxdepth 6 -name "*.xcodeproj" 2>/dev/null | head -n 1)
+          echo "workspace=$WS project=$PROJ"
+          test -n "$WS$PROJ" || { echo "::error::未找到 Xcode 工程，检查 Unity 构建日志"; exit 1; }
+          if [ -n "$WS" ]; then
+            xcodebuild -workspace "$WS" -scheme Unity-iPhone -configuration Release \
+              -archivePath "$PWD/build/Unity-iPhone.xcarchive" \
+              CODE_SIGNING_ALLOWED=NO clean archive
+          else
+            xcodebuild -project "$PROJ" -scheme Unity-iPhone -configuration Release \
+              -archivePath "$PWD/build/Unity-iPhone.xcarchive" \
+              CODE_SIGNING_ALLOWED=NO clean archive
+          fi
 
-    # 再处理普通单行 m_Text
-    s = re.sub(r'(m_Text:\s*)(.*)', do_text, s)
+      - name: 导出未签名 IPA
+        run: |
+          mkdir -p Payload ipa-out
+          APP=$(find build/Unity-iPhone.xcarchive/Products -maxdepth 4 -name "*.app" | head -n 1)
+          echo "APP=$APP"
+          test -n "$APP"
+          cp -R "$APP" Payload/
+          rm -rf Payload/*.app/Watch Payload/*.app/_CodeSignature Payload/*.app/embedded.mobileprovision
+          zip -qry ipa-out/ACNHMobileSpawner-zh-CN.ipa Payload
+          ls -lh ipa-out/
 
-    # 顶部功能按钮文字来自场景的 PanelName 字段（运行时生成按钮），一并汉化。
-    def do_panel(m):
-        prefix, raw = m.group(1), m.group(2).strip().strip("'\"")
-        zh = PANEL_NAME_MAP.get(raw)
-        return prefix + ('"' + zh + '"' if zh else m.group(2))
-    s = re.sub(r'(PanelName:\s*)([^\n]*)', do_panel, s)
-
-    # 字体：把内置 Arial 和 RobotoMono(输入框用) 都替换为中文字体引用
-    font_hits = s.count(BUILTIN_ARIAL)
-    s = s.replace(BUILTIN_ARIAL, CJK_FONT_REF)
-    font_hits += s.count(ROBOTO_MONO)
-    s = s.replace(ROBOTO_MONO, CJK_FONT_REF)
-
-    # 中文字体 Noto Sans CJK SC 行高约 1.45em，比原来的 Arial(约1.0em)高很多。
-    # 原本按英文高度设计的输入框标签(如 Mon:/AM:，框高约44px < 中文字行高52px)，
-    # 换成中文字体后会被 VerticalOverflow=Truncate 整行裁掉 → 文字完全不显示。
-    # 对所有 Text 组件（含 m_FontData 的块），把水平/垂直溢出都改为 Overflow。
-    # 不仅中文标签，IP/Socket 等输入框的默认数字(192.168.0.1)同样会因中文字体行高被裁掉。
-    overflow_fixed = 0
-    blocks = re.split(r'(?=--- !u!)', s)
-    fixed_blocks = []
-    for blk in blocks:
-        if 'm_FontData:' in blk and 'm_Text:' in blk:
-            new_blk = blk.replace('m_HorizontalOverflow: 0', 'm_HorizontalOverflow: 1')
-            new_blk = new_blk.replace('m_VerticalOverflow: 0', 'm_VerticalOverflow: 1')
-            if new_blk != blk:
-                overflow_fixed += 1
-            fixed_blocks.append(new_blk)
-        else:
-            fixed_blocks.append(blk)
-    s = ''.join(fixed_blocks)
-
-    with open(path, 'w', encoding='utf-8', newline='') as f:
-        f.write(s)
-    return replaced, font_hits
-
-
-def patch_scripts(root):
-    changed, hits = [], 0
-    for dirpath, _, files in os.walk(os.path.join(root, 'Assets', 'Scripts')):
-        for name in files:
-            if not name.endswith('.cs'):
-                continue
-            p = os.path.join(dirpath, name)
-            with open(p, encoding='utf-8-sig', errors='replace') as f:
-                src = f.read()
-            orig = src
-            # 通用映射 + 仅对本文件生效的定向映射
-            local_map = dict(SCRIPT_MAP)
-            local_map.update(SCRIPT_MAP_BY_FILE.get(name, {}))
-            def repl(m):
-                nonlocal hits
-                plain = m.group(1).replace('\\"', '"').replace('\\n', '\n')
-                zh = local_map.get(plain)
-                if zh is None:
-                    return m.group(0)
-                hits += 1
-                return '"' + zh.replace('"', '\\"').replace('\n', '\\n') + '"'
-            src = re.sub(r'"((?:[^"\\]|\\.)*)"', repl, src)
-            if src != orig:
-                with open(p, 'w', encoding='utf-8', newline='') as f:
-                    f.write(src)
-                changed.append(name)
-    return changed, hits
-
-
-def patch_default_language(root):
-    """默认语言改为 zhs（索引 7）"""
-    notes = []
-    # GameLanguage.cs
-    gl = os.path.join(root, 'Assets', 'Scripts', 'Core', 'Strings', 'GameLanguage.cs')
-    if os.path.exists(gl):
-        s = open(gl, encoding='utf-8-sig', errors='replace').read()
-        s2 = s.replace('public const string DefaultLanguage = "en";',
-                       'public const string DefaultLanguage = "zhs";')
-        if s2 != s:
-            open(gl, 'w', encoding='utf-8', newline='').write(s2)
-            notes.append('GameLanguage.DefaultLanguage -> zhs')
-    # UI_Settings.cs 默认语言索引：GetLanguage(int defLang = 0) -> 7
-    us = os.path.join(root, 'Assets', 'Scripts', 'ACNHMS', 'UI_Settings.cs')
-    if os.path.exists(us):
-        s = open(us, encoding='utf-8-sig', errors='replace').read()
-        s2 = re.sub(r'GetLanguage\(int defLang = 0\)', 'GetLanguage(int defLang = 7)', s)
-        if s2 != s:
-            open(us, 'w', encoding='utf-8', newline='').write(s2)
-            notes.append('UI_Settings.GetLanguage default -> 7(zhs)')
-    return notes
-
-
-def install_font(root):
-    """把中文字体放进 Assets/Fonts 并生成 .meta"""
-    fonts_dir = os.path.join(root, 'Assets', 'Fonts')
-    os.makedirs(fonts_dir, exist_ok=True)
-    src = os.path.join(HERE, FONT_FILE)
-    dst = os.path.join(fonts_dir, FONT_FILE)
-    if os.path.exists(src):
-        shutil.copyfile(src, dst)
-    meta = os.path.join(fonts_dir, FONT_FILE + '.meta')
-    # 若 meta 不存在，或是旧版本（缺 externalObjects 字段），都重写为完整模板
-    need_meta = True
-    if os.path.exists(meta):
-        existing = open(meta, encoding='utf-8', errors='replace').read()
-        guid_line = [l for l in existing.splitlines() if l.strip().startswith('guid:')]
-        valid_guid = bool(guid_line) and FONT_GUID in guid_line[0] and '%s' not in existing
-        if 'externalObjects' in existing and 'assetBundleVariant' in existing and valid_guid:
-            need_meta = False
-    if need_meta:
-        with open(meta, 'w', encoding='utf-8', newline='') as f:
-            f.write((
-                "fileFormatVersion: 2\n"
-                "guid: %s\n"
-                "TrueTypeFontImporter:\n"
-                "  externalObjects: {}\n"
-                "  serializedVersion: 4\n"
-                "  fontSize: 16\n"
-                "  forceTextureCase: -2\n"
-                "  characterSpacing: 0\n"
-                "  characterPadding: 1\n"
-                "  includeFontData: 1\n"
-                "  fontName: Noto Sans CJK SC\n"
-                "  fontNames:\n"
-                "  - Noto Sans CJK SC\n"
-                "  fallbackFontReferences: []\n"
-                "  customCharacters: \n"
-                "  fontRenderingMode: 0\n"
-                "  ascentCalculationMode: 1\n"
-                "  useLegacyBoundsCalculation: 0\n"
-                "  shouldRoundAdvanceValue: 1\n"
-                "  userData: \n"
-                "  assetBundleName: \n"
-                "  assetBundleVariant: \n"
-            ) % FONT_GUID)
-    return os.path.exists(dst)
-
-
-def fix_compile_errors(root):
-    """修复原工程自身在较新 NHSE.Core 库下的两个编译错误（与汉化无关）。
-    ItemInfo.cs 的堆叠数量字典引用了 ItemKind 枚举中不存在的两个成员，
-    导致 Unity 6 编译时报 CS0103。注释掉这两行即可（对应物品类型在当前库中不存在）。
-    """
-    p = os.path.join(root, 'Assets', 'Scripts', 'Core', 'Structures', 'Item', 'ItemInfo.cs')
-    if not os.path.exists(p):
-        return []
-    s = open(p, encoding='utf-8-sig', errors='replace').read()
-    orig = s
-    fixed = []
-    for kind in ('Kind_SubToolEat', 'Kind_XmasDeco'):
-        # 精确匹配字典行：{Kind_xxx, 数字},  —— 注意不能误伤 Kind_SubToolEatDrop / Remakeable
-        pattern = r'(\s*)\{' + re.escape(kind) + r',\s*[0-9]+\},'
-        def repl(m):
-            fixed.append(kind)
-            return m.group(1) + '// [zh-patch] disabled: undefined enum member ' + kind
-        s = re.sub(pattern, repl, s)
-    if s != orig:
-        open(p, 'w', encoding='utf-8', newline='').write(s)
-    return fixed
-
-
-def patch_dropdown_enum(root):
-    """把 UI_Map.cs 里 RemovalItem 下拉框的枚举名翻译成中文显示。
-    原代码：newVal.text = ri;  改为查表显示中文。"""
-    if not ENUM_ZH_MAP:
-        return False
-    p = os.path.join(root, 'Assets', 'Scripts', 'ACNHMS', 'AdditionalPanel', 'UI_Map.cs')
-    if not os.path.exists(p):
-        return False
-    s = open(p, encoding='utf-8-sig', errors='replace').read()
-    old = 'newVal.text = ri;'
-    if old not in s:
-        return False
-    # 用 C# switch 表达式把枚举名翻译成中文，未收录的保持原文（Unity 6 支持 C# 9）
-    arms = ', '.join('"%s" => "%s"' % (k, v) for k, v in ENUM_ZH_MAP.items())
-    helper = 'newVal.text = ri switch { %s, _ => ri };' % arms
-    s = s.replace(old, helper, 1)
-    open(p, 'w', encoding='utf-8', newline='').write(s)
-    return True
-
-
-def main():
-    if len(sys.argv) < 2:
-        print("usage: python apply_zh_patch.py <UnityProjectRoot>")
-        sys.exit(1)
-    root = sys.argv[1]
-    scene = os.path.join(root, 'Assets', 'Scenes', 'MainScene.unity')
-    stats = {}
-    if os.path.exists(scene):
-        n, f = patch_scene(scene)
-        stats['scene_texts'] = n
-        stats['font_refs'] = f
-    else:
-        stats['scene_error'] = 'MainScene.unity not found'
-    changed, hits = patch_scripts(root)
-    stats['script_files'] = changed
-    stats['script_hits'] = hits
-    stats['language'] = patch_default_language(root)
-    stats['font_installed'] = install_font(root)
-    stats['compile_fixes'] = fix_compile_errors(root)
-    stats['dropdown_enum'] = patch_dropdown_enum(root)
-    print(json.dumps(stats, ensure_ascii=False, indent=2))
-
-
-if __name__ == '__main__':
-    main()
+      - name: 上传 IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ACNHMobileSpawner-zh-CN-ipa
+          path: ipa-out/*.ipa
+          retention-days: 30
