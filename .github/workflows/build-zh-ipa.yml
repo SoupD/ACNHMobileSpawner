@@ -6,7 +6,7 @@ on:
 jobs:
   build-ipa:
     name: 汉化并构建中文 IPA
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 180
     steps:
       - name: 检出代码
@@ -54,7 +54,7 @@ jobs:
           fi
           echo "unity CLI: $UNITY_CLI"
           test -n "$UNITY_CLI" && test -x "$UNITY_CLI"
-          "$UNITY_CLI" install 6000.3.4f1 -m ios -a arm64 --cm --accept-eula --yes
+          "$UNITY_CLI" install 6000.3.4f1 -m ios -a x64 --cm --accept-eula --yes
           "$UNITY_CLI" editors -i
           test -x "/Applications/Unity/Hub/Editor/6000.3.4f1/Unity.app/Contents/MacOS/Unity"
 
