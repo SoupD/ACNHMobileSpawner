@@ -133,6 +133,16 @@ def patch_scene(path):
         return m.group(0)
     s = re.sub(r"(Message:\s*)'((?:[^\n']|''|\n)*?)'(?=\n|$)", do_message, s)
 
+    # 无引号跨行 Message（如 "Message: The offset where Player A's..." 后续缩进行）
+    def do_message_plain(m):
+        body = m.group(1)
+        flat = ' '.join(p.strip() for p in body.split('\n') if p.strip())
+        for en, zh in MESSAGE_MAP.items():
+            if flat.startswith(en):
+                return 'Message: "' + zh.replace('"', '\\"') + '"'
+        return m.group(0)
+    s = re.sub(r'Message:\s*([^\n\'"]+(?:\n\s{4,}[^\n]*)*)', do_message_plain, s)
+
     # 弹窗按钮文字（OK! / never show again 等）
     def do_msgbtn(m):
         prefix, raw = m.group(1), m.group(2).strip().strip("'\"")
@@ -298,23 +308,32 @@ def fix_compile_errors(root):
 
 
 def patch_dropdown_enum(root):
-    """把 UI_Map.cs 里 RemovalItem 下拉框的枚举名翻译成中文显示。
-    原代码：newVal.text = ri;  改为查表显示中文。"""
+    """把各处运行时下拉框的枚举名翻译成中文显示。
+    原代码：newVal.text = <变量>;  改为查表显示中文。"""
     if not ENUM_ZH_MAP:
         return False
-    p = os.path.join(root, 'Assets', 'Scripts', 'ACNHMS', 'AdditionalPanel', 'UI_Map.cs')
-    if not os.path.exists(p):
-        return False
-    s = open(p, encoding='utf-8-sig', errors='replace').read()
-    old = 'newVal.text = ri;'
-    if old not in s:
-        return False
-    # 用 C# switch 表达式把枚举名翻译成中文，未收录的保持原文（Unity 6 支持 C# 9）
     arms = ', '.join('"%s" => "%s"' % (k, v) for k, v in ENUM_ZH_MAP.items())
-    helper = 'newVal.text = ri switch { %s, _ => ri };' % arms
-    s = s.replace(old, helper, 1)
-    open(p, 'w', encoding='utf-8', newline='').write(s)
-    return True
+    changed = False
+    # 多个脚本里的下拉赋值都是 newVal.text = <变量>; 的形式
+    targets = [
+        'Assets/Scripts/ACNHMS/AdditionalPanel/UI_Map.cs',
+        'Assets/Scripts/ACNHMS/AdditionalPanel/Map/UI_MapTerrain.cs',
+        'Assets/Scripts/ACNHMS/AdditionalPanel/UI_TurnipStonk.cs',
+    ]
+    for rel in targets:
+        p = os.path.join(root, rel)
+        if not os.path.exists(p):
+            continue
+        s = open(p, encoding='utf-8-sig', errors='replace').read()
+        # 匹配 newVal.text = <单个标识符>; （如 ri / sm / am / pt）
+        def repl(m):
+            var = m.group(1)
+            return 'newVal.text = %s switch { %s, _ => %s };' % (var, arms, var)
+        new_s = re.sub(r'newVal\.text = ([A-Za-z_]\w*);', repl, s)
+        if new_s != s:
+            open(p, 'w', encoding='utf-8', newline='').write(new_s)
+            changed = True
+    return changed
 
 
 def patch_item_labels(root):
