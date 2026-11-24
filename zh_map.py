@@ -11,12 +11,12 @@ SCENE_MAP = {
     "Injector \nProtocol:": "注入\n协议：",
     "South-east \u2198": "东南 \u2198",
     "Write \u25b2": "写入 \u25b2",
-    '"FeverStart":': '"FeverStart":',  # 内部 key，保留
+    '"FeverStart":': '发烧起点：',  # 内部 key，保留
     "AM:": "上午：",
     "Animation speed:": "动画速度：",
     "Bank RAM Offset:": "银行 RAM 偏移：",
     "Bank:": "银行：",
-    "Body:": "颜色：",
+    "Body:": "身体：",
     "Build:": "建筑：",
     "Buy price:": "买入价：",
     "Byte length:": "字节长度：",
@@ -243,7 +243,7 @@ SCENE_MAP = {
     "Send Delay": "发送延迟",
     "Send villager": "发送村民",
     "Set Time": "设置时间",
-    "Set all body variations": "设置全部颜色",
+    "Set all body variations": "设置全部身体变体",
     "Set plaza position": "设置广场位置",
     "Set turnips": "设置大头菜",
     "Set values": "设置数值",
@@ -397,6 +397,10 @@ ENUM_ZH_MAP = {
     "Flower": "花朵", "Tree": "树木", "Item": "物品", "All": "全部",
     "Stone": "石头", "Wood": "木材", "RockMaterial": "岩石材料",
     "SpoiledTurnip": "腐烂大头菜", "Money": "铃钱", "None": "无", "Internal": "内部物品", "Drop": "掉落物",
+    # TerrainSelectMode（地图格子点击模式下拉）
+    "Delete": "删除", "Load": "读取", "Custom": "自定义", "Place": "放置",
+    # TurnipPattern（大头菜价格走势下拉）
+    "Fluctuating": "波动", "LargeSpike": "大涨", "Decreasing": "下跌", "SmallSpike": "小涨",
 }
 
 # 按文件定向替换：这些短词太通用，只在指定的 UI_Freeze.cs 内替换，避免误伤
@@ -421,6 +425,10 @@ MESSAGE_MAP = {
     "Welcome to ACNHMobileSpawner": "欢迎使用动森手机版生成器。本应用免费，因为你很棒。你还没有安装物品图片（贴图），要去设置页面下载吗？",
     'The type of search you would like': "选择搜索方式。「匹配物品 ID」会替换所有该 ID 的物品（含变体）；「匹配物品和变体」会忽略标志，但仍匹配 ID。",
     "Contains: checks if your search string": "包含：检查搜索字符串是否为物品名称的一部分。开头：检查搜索字符串是否为物品名称的开头。所有搜索均不区分大小写。",
+    "FeverStart:": "发烧起点：",
+    "FeverStart": "发烧起点",
+    "The offset where Player A": "玩家 A 的背包在 RAM 中的起始偏移。只有当你清楚自己背包的偏移量时才修改此值。",
+    "Value freezing allows almost instant regeneration": "数值冻结可实现近乎瞬间的恢复，无需保持连接，本地游玩同样有效。<color=green><b>需要 sys-botbase 1.7 或更高版本。</b></color>",
 }
 
 # 弹窗按钮文字
