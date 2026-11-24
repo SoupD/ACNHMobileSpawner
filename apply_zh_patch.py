@@ -22,6 +22,14 @@ try:
     from zh_map import PANEL_NAME_MAP, ENUM_ZH_MAP
 except ImportError:
     PANEL_NAME_MAP, ENUM_ZH_MAP = {}, {}
+try:
+    from zh_map import MESSAGE_MAP, MSG_BUTTON_MAP
+except ImportError:
+    MESSAGE_MAP, MSG_BUTTON_MAP = {}, {}
+
+
+# 地面物品 kind→中文短名（C# 字典源码，注入 UI_MapItemTile.cs）
+FIELDITEM_KIND_ZH_CS = 'static readonly System.Collections.Generic.Dictionary<string,string> FieldItemKindZH = new System.Collections.Generic.Dictionary<string,string>{{"FenceBamboo","栅栏"},{"FenceBarbedWire","栅栏"},{"FenceChinese","栅栏"},{"FenceDriedStraw","栅栏"},{"FenceEasterEgg","栅栏"},{"FenceHorizontalLog","栅栏"},{"FenceHorizontalWood","栅栏"},{"FenceIkegaki","栅栏"},{"FenceIronAndStone","栅栏"},{"FenceJapanese","栅栏"},{"FenceJuneBride","栅栏"},{"FenceLattice","栅栏"},{"FenceLog","栅栏"},{"FencePegRope","栅栏"},{"FenceSharply","栅栏"},{"FenceSteel","栅栏"},{"FenceStone","栅栏"},{"FenceVerticalWood","栅栏"},{"FenceWallRenga","栅栏"},{"FenceWoodWhite","栅栏"},{"PltBushAzalea","杜鹃"},{"PltBushCamellia","山茶"},{"PltBushHibiscus","扶桑"},{"PltBushHolly","冬青"},{"PltBushHydrangea","绣球"},{"PltBushOsmanthus","桂花"},{"PltFlwAnemone","银莲花"},{"PltFlwCosmos","波斯菊"},{"PltFlwHyacinth","风信子"},{"PltFlwLily","铃兰"},{"PltFlwMum","菊花"},{"PltFlwPansy","三色堇"},{"PltFlwRose","玫瑰"},{"PltFlwRoseGold","金玫瑰"},{"PltFlwTulip","郁金香"},{"PltFlwYuri","百合"},{"PltTreeBamboo","竹子"},{"PltTreeCedar","针叶树"},{"PltTreeCedarDeco","圣诞树"},{"PltTreeOak","阔叶树"},{"PltTreePalm","椰树"},{"PltWeedAut0","秋草"},{"PltWeedAut1","秋草"},{"PltWeedAut2","秋草"},{"PltWeedSmr","夏草"},{"PltWeedSpr","春草"},{"PltWeedWin0","冬草"},{"PltWeedWin1","冬草"},{"StoneA","石头"},{"StoneB","石头"},{"StoneC","石头"},{"StoneD","石头"},{"StoneE","石头"},{"UnitIconHole","洞"}};'
 
 FONT_FILE = "NotoSansCJKsc-Regular.otf"
 FONT_GUID = "a1b2c3d4e5f60718293a4b5c6d7e8f90"  # 固定 32 位 guid
@@ -113,6 +121,25 @@ def patch_scene(path):
         return prefix + ('"' + zh + '"' if zh else m.group(2))
     s = re.sub(r'(PanelName:\s*)([^\n]*)', do_panel, s)
 
+    # 弹窗提示：Message 是跨行单引号字段，按英文开头识别串查表替换为完整中文。
+    def do_message(m):
+        prefix, body = m.group(1), m.group(2)
+        flat = ' '.join(p.strip() for p in body.split('\n') if p.strip())
+        flat = flat.replace("''", "'")
+        for en, zh in MESSAGE_MAP.items():
+            if flat.startswith(en):
+                # YAML 双引号标量，转义内部双引号
+                return prefix + '"' + zh.replace('"', '\\"') + '"'
+        return m.group(0)
+    s = re.sub(r"(Message:\s*)'((?:[^\n']|''|\n)*?)'(?=\n|$)", do_message, s)
+
+    # 弹窗按钮文字（OK! / never show again 等）
+    def do_msgbtn(m):
+        prefix, raw = m.group(1), m.group(2).strip().strip("'\"")
+        zh = MSG_BUTTON_MAP.get(raw)
+        return prefix + ('"' + zh + '"' if zh else m.group(2))
+    s = re.sub(r'((?:Button1Msg|Button2Msg|AcceptLabel|CancelLabel):\s*)([^\n]*)', do_msgbtn, s)
+
     # 字体：把内置 Arial 和 RobotoMono(输入框用) 都替换为中文字体引用
     font_hits = s.count(BUILTIN_ARIAL)
     s = s.replace(BUILTIN_ARIAL, CJK_FONT_REF)
@@ -132,8 +159,11 @@ def patch_scene(path):
             # 撤销之前可能设成 1 的 overflow，恢复裁剪（BestFit 已保证放得下）
             new_blk = new_blk.replace('m_HorizontalOverflow: 1', 'm_HorizontalOverflow: 0')
             new_blk = new_blk.replace('m_VerticalOverflow: 1', 'm_VerticalOverflow: 0')
-            # BestFit 需要合理的 MinSize/MaxSize 范围
+            # BestFit 只在"缩小"方向起作用：MaxSize 设为原设计字号36，避免在小标签(原26)上放大到45显得过大；
+            # MinSize 8 保证中文再长也不会小到看不清。
             new_blk = new_blk.replace('m_MinSize: 2', 'm_MinSize: 8')
+            new_blk = new_blk.replace('m_MaxSize: 45', 'm_MaxSize: 36')
+            new_blk = new_blk.replace('m_MaxSize: 40', 'm_MaxSize: 36')
             if new_blk != blk:
                 fit_fixed += 1
             fixed_blocks.append(new_blk)
@@ -287,6 +317,27 @@ def patch_dropdown_enum(root):
     return True
 
 
+def patch_item_labels(root):
+    """把地图格子里地面物品的英文标签替换为简短中文（按 FieldItemKind）。"""
+    p = os.path.join(root, 'Assets', 'Scripts', 'ACNHMS', 'AdditionalPanel', 'Map', 'UI_MapItemTile.cs')
+    if not os.path.exists(p):
+        return False
+    s = open(p, encoding='utf-8-sig', errors='replace').read()
+    old = 'toRet = AddNewlinesAfterCapitals(def.Name);'
+    if old not in s:
+        return False
+    cs_dict = FIELDITEM_KIND_ZH_CS
+    # 字典作为类静态字段，插入到类声明的 { 之后
+    cls_marker = "public class UI_MapItemTile : MonoBehaviour, IPointerEnterHandler, IPointerDownHandler\n{"
+    if cls_marker not in s:
+        return False
+    s = s.replace(cls_marker, cls_marker + "\n    " + cs_dict, 1)
+    # GetName 里用字典查中文短名
+    inject = "if (FieldItemKindZH.TryGetValue(def.Kind.ToString(), out var zhLabel)) toRet = zhLabel; else " + old
+    s = s.replace(old, inject, 1)
+    open(p, 'w', encoding='utf-8', newline='').write(s)
+    return True
+
 def main():
     if len(sys.argv) < 2:
         print("usage: python apply_zh_patch.py <UnityProjectRoot>")
@@ -307,6 +358,7 @@ def main():
     stats['font_installed'] = install_font(root)
     stats['compile_fixes'] = fix_compile_errors(root)
     stats['dropdown_enum'] = patch_dropdown_enum(root)
+    stats['item_labels'] = patch_item_labels(root)
     print(json.dumps(stats, ensure_ascii=False, indent=2))
 
 
