@@ -396,7 +396,7 @@ ENUM_ZH_MAP = {
     "Weed": "杂草", "TreeBranch": "树枝", "Fence": "栅栏", "Bush": "灌木",
     "Flower": "花朵", "Tree": "树木", "Item": "物品", "All": "全部",
     "Stone": "石头", "Wood": "木材", "RockMaterial": "岩石材料",
-    "SpoiledTurnip": "腐烂大头菜", "Money": "铃钱", "None": "无", "Internal": "内部物品",
+    "SpoiledTurnip": "腐烂大头菜", "Money": "铃钱", "None": "无", "Internal": "内部物品", "Drop": "掉落物",
 }
 
 # 按文件定向替换：这些短词太通用，只在指定的 UI_Freeze.cs 内替换，避免误伤
@@ -409,4 +409,26 @@ SCRIPT_MAP_BY_FILE = {
         "wallet": "钱包",
         "turnip prices": "大头菜价格",
     },
+}
+
+
+# 弹窗提示（场景里的 Message:/ButtonNMsg:/AcceptLabel 字段，跨行单引号）。
+# key 为英文原文开头识别串（前若干字符），value 为中文完整文本。
+MESSAGE_MAP = {
+    "The shape of the rectangle your items will be spawned in": "物品生成区域的矩形形状，宽高默认为 1（正方形）。",
+    "Reloading the villager will fetch the villager": "重新载入村民会在写入更改前从你的岛屿获取最新村民数据。这会更慢，但能确保你在游戏中做的更改在写入前都已加载。<color=red><b>!! 警告 !!</b></color> 如果替换村民，新村民将继承旧村民的所有标志和记忆，请确认这是你想要的！",
+    "You have selected an internal item": "你选择了内部物品。这类物品可能出现异常，且在非自制固件的主机上难以移除。请勿把内部物品发给其他玩家以破坏他们的体验。如果你把内部物品放到地图上难以移除，我已加入功能：用右下角「+」面板里的地图工具移除所有已放置的内部物品。",
+    "Welcome to ACNHMobileSpawner": "欢迎使用动森手机版生成器。本应用免费，因为你很棒。你还没有安装物品图片（贴图），要去设置页面下载吗？",
+    'The type of search you would like': "选择搜索方式。「匹配物品 ID」会替换所有该 ID 的物品（含变体）；「匹配物品和变体」会忽略标志，但仍匹配 ID。",
+    "Contains: checks if your search string": "包含：检查搜索字符串是否为物品名称的一部分。开头：检查搜索字符串是否为物品名称的开头。所有搜索均不区分大小写。",
+}
+
+# 弹窗按钮文字
+MSG_BUTTON_MAP = {
+    "OK!": "确定！",
+    "OK and never show this again": "确定且不再提示",
+    "No, and never show this again": "否且不再提示",
+    "Yes": "是",
+    "No": "否",
+    "Cancel": "取消",
 }
